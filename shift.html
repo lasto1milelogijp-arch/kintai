@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>シフト希望</title>
+  <style>
+    body{font-family:sans-serif;margin:0;padding:16px;color:#222}
+    h2{font-size:17px;margin:4px 0 10px}
+    .card{border:1px solid #e5e5e5;border-radius:10px;padding:14px;margin-bottom:18px}
+    label{display:block;font-size:13px;color:#666;margin:8px 0 4px}
+    input,textarea{width:100%;box-sizing:border-box;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px}
+    .row2{display:flex;gap:10px}.row2>div{flex:1}
+    #send{width:100%;margin-top:14px;padding:14px;font-size:16px;font-weight:bold;color:#fff;background:#06c755;border:none;border-radius:10px}
+    .nav{display:flex;justify-content:space-between;align-items:center;margin:10px 0}
+    .nav button{font-size:14px;padding:6px 12px;border:1px solid #ccc;background:#fff;border-radius:6px}
+    .item{border-bottom:1px solid #eee;padding:10px 4px;display:flex;justify-content:space-between;align-items:center;font-size:14px}
+    .badge{font-size:12px;padding:3px 10px;border-radius:20px;color:#fff;white-space:nowrap}
+    .b-pending{background:#9aa0a6}.b-ok{background:#06c755}.b-no{background:#e0564b}
+    #status{text-align:center;color:#666;padding:16px}
+  </style>
+</head>
+<body>
+  <h2>シフト希望を出す</h2>
+  <div class="card">
+    <label>日付</label>
+    <input type="date" id="date">
+    <div class="row2">
+      <div><label>開始</label><input type="time" id="start" value="09:00"></div>
+      <div><label>終了</label><input type="time" id="end" value="18:00"></div>
+    </div>
+    <label>備考（任意）</label>
+    <input type="text" id="note" placeholder="例: 午前のみ可">
+    <button id="send" onclick="submitShift()">この内容で希望を送信</button>
+  </div>
+
+  <h2 id="myname">あなたのシフト</h2>
+  <div class="nav">
+    <button onclick="changeMonth(-1)">◀ 前月</button>
+    <span id="monthLabel"></span>
+    <button onclick="changeMonth(1)">翌月 ▶</button>
+  </div>
+  <div id="status">読み込み中...</div>
+  <div id="list"></div>
+
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+  <script>
+    const LIFF_ID = "2010310932-MO7e9yXF";
+    const GAS_URL = "★ index.html と同じ GAS_URL を貼る ★";
+
+    let userId=null, displayName='', cur=new Date();
+    const pad=n=>('0'+n).slice(-2);
+    const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
+    const ym =d=>d.getFullYear()+'/'+pad(d.getMonth()+1);
+
+    window.onload = async function(){
+      try{
+        await liff.init({ liffId: LIFF_ID });
+        if(!liff.isLoggedIn()){ liff.login(); return; }
+        const p = await liff.getProfile();
+        userId = p.userId; displayName = p.displayName;
+        document.getElementById('date').value = ymd(new Date());
+        load();
+      }catch(e){ document.getElementById('status').innerText='エラー: '+e.message; }
+    };
+
+    function changeMonth(d){ cur.setMonth(cur.getMonth()+d); load(); }
+
+    function submitShift(){
+      const date=document.getElementById('date').value;
+      const start=document.getElementById('start').value;
+      const end=document.getElementById('end').value;
+      const note=document.getElementById('note').value;
+      if(!date||!start||!end){ alert('日付・開始・終了を入力してください'); return; }
+      const params=new URLSearchParams();
+      params.append('contents', JSON.stringify({
+        action:'shift_request', userId:userId, displayName:displayName,
+        date:date, start:start, end:end, note:note
+      }));
+      let ok=false;
+      try{ ok=navigator.sendBeacon(GAS_URL, params); }catch(e){ ok=false; }
+      if(!ok) fetch(GAS_URL,{method:'POST',mode:'no-cors',keepalive:true,body:params});
+      const b=document.getElementById('send');
+      b.innerText='✅ 送信しました';
+      setTimeout(()=>{ b.innerText='この内容で希望を送信'; load(); }, 1500);
+    }
+
+    async function load(){
+      const st=document.getElementById('status');
+      st.style.display='block'; st.innerText='読み込み中...';
+      document.getElementById('list').innerHTML='';
+      document.getElementById('monthLabel').innerText=ym(cur);
+      try{
+        const url=GAS_URL+'?action=shift_view&userId='+encodeURIComponent(userId)+'&month='+encodeURIComponent(ym(cur));
+        const res=await fetch(url);
+        render(await res.json());
+      }catch(e){ st.innerText='読み込みに失敗: '+e.message; }
+    }
+
+    function render(data){
+      const st=document.getElementById('status');
+      document.getElementById('myname').innerText=(data.name||displayName||'')+' さんのシフト';
+      if(!data.rows||data.rows.length===0){ st.innerText='この月の希望はまだありません'; return; }
+      st.style.display='none';
+      const list=document.getElementById('list');
+      data.rows.forEach(r=>{
+        const cls=r.status==='確定'?'ok':(r.status==='却下'?'no':'pending');
+        const left=(r.date?r.date.slice(5):'')+'　'+(r.start||'')+'〜'+(r.end||'')+(r.note?'　('+r.note+')':'');
+        const div=document.createElement('div'); div.className='item';
+        div.innerHTML='<span>'+left+'</span><span class="badge b-'+cls+'">'+(r.status||'申請中')+'</span>';
+        list.appendChild(div);
+      });
+    }
+  </script>
+</body>
+</html>
