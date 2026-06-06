@@ -36,9 +36,16 @@
 
         setMsg('プロフィール取得中...');
         const profile = await liff.getProfile();
-
+        
         const sp = new URLSearchParams(location.search);
-        const type = sp.get('type') || sp.get('state') || '出勤';
+        let raw = sp.get('type') || sp.get('state');
+        const ls = sp.get('liff.state');
+        if (!raw && ls) {
+          const inner = new URLSearchParams(ls.charAt(0) === '?' ? ls.slice(1) : ls);
+          raw = inner.get('type') || inner.get('state');
+        }
+        const type = (raw === 'out' || raw === '退勤') ? '退勤' : '出勤';
+        
         
         setMsg('位置情報を取得中...');
         const coords = await getCoords(); // 失敗してもnullで進む
@@ -57,7 +64,7 @@
         try { ok = navigator.sendBeacon(GAS_URL, params); } catch (e) { ok = false; }
         if (!ok) { fetch(GAS_URL, { method:'POST', mode:'no-cors', keepalive:true, body:params }); }
 
-        setMsg('✅ ' + type + 'を記録しました', coords ? '' : '(位置情報なし)');
+        setMsg('✅ ' + type + 'を記録しました', 'デバッグ: ' + location.search);
         setTimeout(closeSafe, 1500);
 
       } catch (e) {
