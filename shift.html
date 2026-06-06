@@ -85,20 +85,30 @@
       setTimeout(()=>{ b.innerText='この内容で希望を送信'; load(); }, 1500);
     }
 
-    function load(){
-      const st = document.getElementById('status');
+    async function load(){
+      const st=document.getElementById('status');
       st.style.display='block'; st.innerText='読み込み中...';
       document.getElementById('list').innerHTML='';
       document.getElementById('monthLabel').innerText=ym(cur);
+      const qs='action=shift_view&userId='+encodeURIComponent(userId)+'&month='+encodeURIComponent(ym(cur));
+      try{
+        const res=await fetch(GAS_URL+'?'+qs);
+        render(await res.json());
+      }catch(e1){
+        try{ render(await jsonpGet(qs)); }   // iPhone等でfetchが失敗したらJSONPで再試行
+        catch(e2){ st.innerText='読み込みに失敗しました'; }
+      }
+    }
 
-      const cb = 'cb_' + Date.now();
-      const s = document.createElement('script');
-      let done = false;
-      window[cb] = function(data){ done=true; render(data); delete window[cb]; s.remove(); };
-      s.onerror = function(){ if(!done) st.innerText='読み込みに失敗しました'; };
-      s.src = GAS_URL + '?action=shift_view&userId=' + encodeURIComponent(userId)
-            + '&month=' + encodeURIComponent(ym(cur)) + '&callback=' + cb;
-      document.head.appendChild(s);
+    function jsonpGet(qs){
+      return new Promise(function(resolve,reject){
+        const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+        const s=document.createElement('script'); let done=false;
+        window[cb]=function(d){ done=true; resolve(d); delete window[cb]; s.remove(); };
+        s.onerror=function(){ if(!done) reject(new Error('jsonp fail')); s.remove(); };
+        s.src=GAS_URL+'?'+qs+'&callback='+cb;
+        document.head.appendChild(s);
+      });
     }
     
 
