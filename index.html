@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>出退勤管理</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; }
+    #msg { padding: 48px 20px; font-size: 22px; text-align: center; font-weight: bold; line-height: 1.6; }
+    #sub { font-size: 16px; color: #555; font-weight: normal; margin-top: 14px; white-space: pre-line; }
+  </style>
+</head>
+<body>
+  <div id="msg">準備中...<div id="sub"></div></div>
+
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+  <script>
+    // ▼▼▼ ここ2か所だけ書き換える ▼▼▼
+    const LIFF_ID = "2010310932-MO7e9yXF";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
+    // ▲▲▲
+
+    const msgEl = document.getElementById('msg');
+    const subEl = document.getElementById('sub');
+    function setMsg(main, sub){ msgEl.firstChild.nodeValue = main; subEl.innerText = sub || ''; }
+    function closeSafe(){ if (liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
+
+    window.onload = async function () {
+      try {
+        if (typeof liff === 'undefined') throw new Error('SDK読み込み失敗');
+
+        setMsg('LINEに接続中...');
+        await liff.init({ liffId: LIFF_ID });
+
+        if (!liff.isLoggedIn()) { setMsg('ログイン中...'); liff.login(); return; }
+
+        setMsg('プロフィール取得中...');
+        const profile = await liff.getProfile();
+
+        const type = new URLSearchParams(location.search).get('type') || '出勤';
+
+        setMsg('位置情報を取得中...');
+        const coords = await getCoords(); // 失敗してもnullで進む
+
+        const params = new URLSearchParams();
+        params.append('contents', JSON.stringify({
+          userId: profile.userId,
+          displayName: profile.displayName,
+          type: type,
+          lat: coords ? coords.lat : '',
+          lng: coords ? coords.lng : ''
+        }));
+
+        // sendBeacon = 画面を閉じても送信が完了する確実な方式
+        let ok = false;
+        try { ok = navigator.sendBeacon(GAS_URL, params); } catch (e) { ok = false; }
+        if (!ok) { fetch(GAS_URL, { method:'POST', mode:'no-cors', keepalive:true, body:params }); }
+
+        setMsg('✅ ' + type + 'を記録しました', coords ? '' : '(位置情報なし)');
+        setTimeout(closeSafe, 1500);
+
+      } catch (e) {
+        setMsg('⚠️ エラー', e.message);
+        setTimeout(closeSafe, 3000);
+      }
+    };
+
+    function getCoords() {
+      return new Promise(function (resolve) {
+        if (!navigator.geolocation) return resolve(null);
+        navigator.geolocation.getCurrentPosition(
+          function (p) { resolve({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+          function () { resolve(null); },
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+      });
+    }
+  </script>
+</body>
+</html>
