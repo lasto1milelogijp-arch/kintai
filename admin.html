@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>管理者画面</title>
+<style>
+  body{font-family:sans-serif;margin:0;padding:16px;color:#222;background:#fafafa}
+  h2{font-size:16px;margin:18px 0 8px;border-left:5px solid #06c755;padding-left:8px}
+  .card{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:12px;margin-bottom:10px}
+  .meta{font-size:14px;margin-bottom:8px}.meta b{font-size:15px}
+  .btns{display:flex;gap:8px}
+  .btns button{flex:1;padding:10px;font-size:14px;font-weight:bold;border:none;border-radius:8px;color:#fff}
+  .ok{background:#06c755}.no{background:#e0564b}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:8px;overflow:hidden}
+  th,td{padding:8px 6px;border-bottom:1px solid #eee;text-align:center}th{background:#f0f0f0}
+  #status{text-align:center;color:#666;padding:30px}
+  .denied{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:20px;text-align:center}
+  .idbox{font-family:monospace;font-size:12px;background:#f3f3f3;padding:10px;border-radius:6px;word-break:break-all;margin-top:10px}
+  .empty{color:#888;font-size:14px;padding:10px;text-align:center}
+</style>
+</head>
+<body>
+  <div id="status">読み込み中...</div>
+  <div id="app" style="display:none">
+    <h2>今日の出勤状況（<span id="today"></span>）</h2>
+    <table><thead><tr><th>氏名</th><th>出勤</th><th>退勤</th><th>勤務</th></tr></thead><tbody id="attBody"></tbody></table>
+    <h2>承認待ちのシフト</h2>
+    <div id="pending"></div>
+  </div>
+  <div id="denied" class="denied" style="display:none">
+    <div>このアカウントには管理者権限がありません。</div>
+    <div style="margin-top:8px;font-size:13px;color:#666">下のIDを「管理者」シートのA列に追加すると管理者になれます。</div>
+    <div class="idbox" id="myid"></div>
+  </div>
+
+<script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+<script>
+  const LIFF_ID = "2010310932-MO7e9yXF";
+  const GAS_URL = "★ index.html と同じ GAS_URL を貼る ★";
+  let userId = null;
+  const enc = encodeURIComponent;
+
+  function jsonp(params){
+    return new Promise(function(resolve, reject){
+      const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+      const s=document.createElement('script'); let done=false;
+      window[cb]=function(d){ done=true; resolve(d); delete window[cb]; s.remove(); };
+      s.onerror=function(){ if(!done) reject(new Error('通信失敗')); s.remove(); };
+      s.src=GAS_URL+'?'+params+'&callback='+cb;
+      document.head.appendChild(s);
+    });
+  }
+
+  window.onload = async function(){
+    try{
+      await liff.init({ liffId: LIFF_ID });
+      if(!liff.isLoggedIn()){ liff.login(); return; }
+      const p = await liff.getProfile();
+      userId = p.userId;
+      loadAll();
+    }catch(e){ document.getElementById('status').innerText='エラー: '+e.message; }
+  };
+
+  async function loadAll(){
+    const st=document.getElementById('status');
+    st.style.display='block'; st.innerText='読み込み中...';
+    try{
+      const data = await jsonp('action=admin_data&userId='+enc(userId));
+      if(data.status==='denied'){
+        st.style.display='none';
+        document.getElementById('denied').style.display='block';
+        document.getElementById('myid').innerText = data.yourId || userId;
+        return;
+      }
+      render(data);
+    }catch(e){ st.innerText='読み込みに失敗しました'; }
+  }
+
+  function render(data){
+    document.getElementById('status').style.display='none';
+    document.getElementById('app').style.display='block';
+    document.getElementById('today').innerText = data.today||'';
+    const ab=document.getElementById('attBody'); ab.innerHTML='';
+    if(!data.attendance||data.attendance.length===0){
+      ab.innerHTML='<tr><td colspan="4" class="empty">本日の打刻はまだありません</td></tr>';
+    }else{
+      data.attendance.forEach(function(r){
+        ab.innerHTML+='<tr><td>'+(r.name||'')+'</td><td>'+(r.in||'-')+'</td><td>'+(r.out||'-')+'</td><td>'+(r.work||'-')+'</td></tr>';
+      });
+    }
+    const pe=document.getElementById('pending'); pe.innerHTML='';
+    if(!data.pending||data.pending.length===0){
+      pe.innerHTML='<div class="empty">承認待ちのシフトはありません</div>';
+    }else{
+      data.pending.forEach(function(s){
+        const div=document.createElement('div'); div.className='card';
+        div.innerHTML='<div class="meta"><b>'+(s.name||'')+'</b>　'+s.date+'　'+(s.start||'')+'〜'+(s.end||'')+(s.note?'　('+s.note+')':'')+'</div>';
+        const btns=document.createElement('div'); btns.className='btns';
+        const ok=document.createElement('button'); ok.className='ok'; ok.innerText='確定';
+        const no=document.createElement('button'); no.className='no'; no.innerText='却下';
+        ok.onclick=function(){ decide(s.row,'確定',div,ok,no); };
+        no.onclick=function(){ decide(s.row,'却下',div,ok,no); };
+        btns.appendChild(ok); btns.appendChild(no); div.appendChild(btns); pe.appendChild(div);
+      });
+    }
+  }
+
+  async function decide(row, decision, div, ok, no){
+    ok.disabled=true; no.disabled=true; ok.innerText='...';
+    try{
+      const res = await jsonp('action=shift_decision&userId='+enc(userId)+'&row='+row+'&decision='+enc(decision));
+      if(res.status==='ok'){ div.style.opacity=0.5; div.innerHTML='<div class="meta">'+decision+'しました</div>'; }
+      else { ok.disabled=false; no.disabled=false; ok.innerText='確定'; alert('失敗しました'); }
+    }catch(e){ ok.disabled=false; no.disabled=false; ok.innerText='確定'; alert('通信に失敗しました'); }
+  }
+</script>
+</body>
+</html>
