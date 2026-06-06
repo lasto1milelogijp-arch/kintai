@@ -14,9 +14,11 @@
     #send{width:100%;margin-top:14px;padding:14px;font-size:16px;font-weight:bold;color:#fff;background:#06c755;border:none;border-radius:10px}
     .nav{display:flex;justify-content:space-between;align-items:center;margin:10px 0}
     .nav button{font-size:14px;padding:6px 12px;border:1px solid #ccc;background:#fff;border-radius:6px}
-    .item{border-bottom:1px solid #eee;padding:10px 4px;display:flex;justify-content:space-between;align-items:center;font-size:14px}
+    .item{border-bottom:1px solid #eee;padding:10px 4px;display:flex;justify-content:space-between;align-items:center;font-size:14px;gap:8px}
+    .right{display:flex;gap:8px;align-items:center;white-space:nowrap}
     .badge{font-size:12px;padding:3px 10px;border-radius:20px;color:#fff;white-space:nowrap}
     .b-pending{background:#9aa0a6}.b-ok{background:#06c755}.b-no{background:#e0564b}
+    .cancel{font-size:12px;padding:4px 10px;border:1px solid #ccc;background:#fff;color:#666;border-radius:6px}
     #status{text-align:center;color:#666;padding:16px}
   </style>
 </head>
@@ -48,83 +50,105 @@
     const LIFF_ID = "2010310932-MO7e9yXF";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
 
-    let userId=null, displayName='', cur=new Date();
-    const pad=n=>('0'+n).slice(-2);
-    const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
-    const ym =d=>d.getFullYear()+'/'+pad(d.getMonth()+1);
+    let userId = null, displayName = '', cur = new Date();
+    const enc = encodeURIComponent;
+    const pad = n => ('0' + n).slice(-2);
+    const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
+    const ym  = d => d.getFullYear() + '/' + pad(d.getMonth() + 1);
 
-    window.onload = async function(){
-      try{
+    window.onload = async function () {
+      try {
         await liff.init({ liffId: LIFF_ID });
-        if(!liff.isLoggedIn()){ liff.login(); return; }
+        if (!liff.isLoggedIn()) { liff.login(); return; }
         const p = await liff.getProfile();
         userId = p.userId; displayName = p.displayName;
         document.getElementById('date').value = ymd(new Date());
         load();
-      }catch(e){ document.getElementById('status').innerText='エラー: '+e.message; }
+      } catch (e) { document.getElementById('status').innerText = 'エラー: ' + e.message; }
     };
 
-    function changeMonth(d){ cur.setMonth(cur.getMonth()+d); load(); }
+    function changeMonth(d) { cur.setMonth(cur.getMonth() + d); load(); }
 
-    function submitShift(){
-      const date=document.getElementById('date').value;
-      const start=document.getElementById('start').value;
-      const end=document.getElementById('end').value;
-      const note=document.getElementById('note').value;
-      if(!date||!start||!end){ alert('日付・開始・終了を入力してください'); return; }
-      const params=new URLSearchParams();
-      params.append('contents', JSON.stringify({
-        action:'shift_request', userId:userId, displayName:displayName,
-        date:date, start:start, end:end, note:note
-      }));
-      let ok=false;
-      try{ ok=navigator.sendBeacon(GAS_URL, params); }catch(e){ ok=false; }
-      if(!ok) fetch(GAS_URL,{method:'POST',mode:'no-cors',keepalive:true,body:params});
-      const b=document.getElementById('send');
-      b.innerText='✅ 送信しました';
-      setTimeout(()=>{ b.innerText='この内容で希望を送信'; load(); }, 1500);
-    }
-
-    async function load(){
-      const st=document.getElementById('status');
-      st.style.display='block'; st.innerText='読み込み中...';
-      document.getElementById('list').innerHTML='';
-      document.getElementById('monthLabel').innerText=ym(cur);
-      const qs='action=shift_view&userId='+encodeURIComponent(userId)+'&month='+encodeURIComponent(ym(cur));
-      try{
-        const res=await fetch(GAS_URL+'?'+qs);
-        render(await res.json());
-      }catch(e1){
-        try{ render(await jsonpGet(qs)); }   // iPhone等でfetchが失敗したらJSONPで再試行
-        catch(e2){ st.innerText='読み込みに失敗しました'; }
-      }
-    }
-
-    function jsonpGet(qs){
-      return new Promise(function(resolve,reject){
-        const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
-        const s=document.createElement('script'); let done=false;
-        window[cb]=function(d){ done=true; resolve(d); delete window[cb]; s.remove(); };
-        s.onerror=function(){ if(!done) reject(new Error('jsonp fail')); s.remove(); };
-        s.src=GAS_URL+'?'+qs+'&callback='+cb;
+    function jsonpGet(qs) {
+      return new Promise(function (resolve, reject) {
+        const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const s = document.createElement('script'); let done = false;
+        window[cb] = function (d) { done = true; resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) reject(new Error('jsonp fail')); s.remove(); };
+        s.src = GAS_URL + '?' + qs + '&callback=' + cb;
         document.head.appendChild(s);
       });
     }
-    
 
-    function render(data){
-      const st=document.getElementById('status');
-      document.getElementById('myname').innerText=(data.name||displayName||'')+' さんのシフト';
-      if(!data.rows||data.rows.length===0){ st.innerText='この月の希望はまだありません'; return; }
-      st.style.display='none';
-      const list=document.getElementById('list');
-      data.rows.forEach(r=>{
-        const cls=r.status==='確定'?'ok':(r.status==='却下'?'no':'pending');
-        const left=(r.date?r.date.slice(5):'')+'　'+(r.start||'')+'〜'+(r.end||'')+(r.note?'　('+r.note+')':'');
-        const div=document.createElement('div'); div.className='item';
-        div.innerHTML='<span>'+left+'</span><span class="badge b-'+cls+'">'+(r.status||'申請中')+'</span>';
+    // fetch優先、ダメならJSONP（Android/iPhone両対応）
+    async function callGas(qs) {
+      try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
+      catch (e) { return await jsonpGet(qs); }
+    }
+
+    function submitShift() {
+      const date = document.getElementById('date').value;
+      const start = document.getElementById('start').value;
+      const end = document.getElementById('end').value;
+      const note = document.getElementById('note').value;
+      if (!date || !start || !end) { alert('日付・開始・終了を入力してください'); return; }
+      const params = new URLSearchParams();
+      params.append('contents', JSON.stringify({
+        action: 'shift_request', userId: userId, displayName: displayName,
+        date: date, start: start, end: end, note: note
+      }));
+      let ok = false;
+      try { ok = navigator.sendBeacon(GAS_URL, params); } catch (e) { ok = false; }
+      if (!ok) fetch(GAS_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: params });
+      const b = document.getElementById('send');
+      b.innerText = '✅ 送信しました';
+      setTimeout(function () { b.innerText = 'この内容で希望を送信'; load(); }, 1500);
+    }
+
+    async function load() {
+      const st = document.getElementById('status');
+      st.style.display = 'block'; st.innerText = '読み込み中...';
+      document.getElementById('list').innerHTML = '';
+      document.getElementById('monthLabel').innerText = ym(cur);
+      try {
+        const data = await callGas('action=shift_view&userId=' + enc(userId) + '&month=' + enc(ym(cur)));
+        render(data);
+      } catch (e) { st.innerText = '読み込みに失敗しました'; }
+    }
+
+    function render(data) {
+      const st = document.getElementById('status');
+      document.getElementById('myname').innerText = (data.name || displayName || '') + ' さんのシフト';
+      if (!data.rows || data.rows.length === 0) { st.innerText = 'この月の希望はまだありません'; return; }
+      st.style.display = 'none';
+      const list = document.getElementById('list'); list.innerHTML = '';
+      data.rows.forEach(function (r) {
+        const status = r.status || '申請中';
+        const cls = status === '確定' ? 'ok' : (status === '却下' ? 'no' : 'pending');
+        const left = (r.date ? r.date.slice(5) : '') + '　' + (r.start || '') + '〜' + (r.end || '') + (r.note ? '　(' + r.note + ')' : '');
+        const div = document.createElement('div'); div.className = 'item';
+        const ls = document.createElement('span'); ls.innerText = left;
+        const rs = document.createElement('span'); rs.className = 'right';
+        const badge = document.createElement('span'); badge.className = 'badge b-' + cls; badge.innerText = status;
+        rs.appendChild(badge);
+        if (status === '申請中') {
+          const btn = document.createElement('button'); btn.className = 'cancel'; btn.innerText = '取消';
+          btn.onclick = function () { cancelReq(r.stamp, btn); };
+          rs.appendChild(btn);
+        }
+        div.appendChild(ls); div.appendChild(rs);
         list.appendChild(div);
       });
+    }
+
+    async function cancelReq(stamp, btn) {
+      if (!confirm('この申請を取り消しますか？')) return;
+      btn.disabled = true; btn.innerText = '...';
+      try {
+        const res = await callGas('action=shift_cancel&userId=' + enc(userId) + '&stamp=' + enc(stamp));
+        if (res.status === 'ok') { load(); }
+        else { alert(res.message || '取り消せませんでした'); btn.disabled = false; btn.innerText = '取消'; }
+      } catch (e) { alert('通信に失敗しました'); btn.disabled = false; btn.innerText = '取消'; }
     }
   </script>
 </body>
