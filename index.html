@@ -37,8 +37,9 @@
         setMsg('プロフィール取得中...');
         const profile = await liff.getProfile();
 
-        const type = new URLSearchParams(location.search).get('type') || '出勤';
-
+        const sp = new URLSearchParams(location.search);
+        const type = sp.get('type') || sp.get('state') || '出勤';
+        
         setMsg('位置情報を取得中...');
         const coords = await getCoords(); // 失敗してもnullで進む
 
