@@ -59,16 +59,15 @@
     
     function load(){
       const st = document.getElementById('status');
-      st.style.display='block'; st.innerText='読み込み中...';
-      document.getElementById('list').innerHTML='';
-      document.getElementById('monthLabel').innerText=ym(cur);
+      st.style.display = 'block'; st.innerText = '読み込み中...';
+      document.getElementById('content').style.display = 'none';
 
       const cb = 'cb_' + Date.now();
       const s = document.createElement('script');
       let done = false;
       window[cb] = function(data){ done=true; render(data); delete window[cb]; s.remove(); };
       s.onerror = function(){ if(!done) st.innerText='読み込みに失敗しました'; };
-      s.src = GAS_URL + '?action=shift_view&userId=' + encodeURIComponent(userId)
+      s.src = GAS_URL + '?action=summary&userId=' + encodeURIComponent(userId)
             + '&month=' + encodeURIComponent(ym(cur)) + '&callback=' + cb;
       document.head.appendChild(s);
     }
