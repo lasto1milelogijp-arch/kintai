@@ -8,6 +8,7 @@
     body { font-family: sans-serif; margin: 0; }
     #msg { padding: 48px 20px; font-size: 22px; text-align: center; font-weight: bold; line-height: 1.6; }
     #sub { font-size: 16px; color: #555; font-weight: normal; margin-top: 14px; white-space: pre-line; }
+    #sub.warn { color: #d9772b; font-weight: bold; }
   </style>
 </head>
 <body>
@@ -15,28 +16,29 @@
 
   <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
   <script>
-    // ▼▼▼ ここ2か所だけ書き換える ▼▼▼
     const LIFF_ID = "2010310932-MO7e9yXF";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
-    // ▲▲▲
 
     const msgEl = document.getElementById('msg');
     const subEl = document.getElementById('sub');
-    function setMsg(main, sub){ msgEl.firstChild.nodeValue = main; subEl.innerText = sub || ''; }
-    function closeSafe(){ if (liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
+    function setMsg(main, sub, warn) {
+      msgEl.firstChild.nodeValue = main;
+      subEl.innerText = sub || '';
+      subEl.className = warn ? 'warn' : '';
+    }
+    function closeSafe() { if (liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
 
     window.onload = async function () {
       try {
         if (typeof liff === 'undefined') throw new Error('SDK読み込み失敗');
-
         setMsg('LINEに接続中...');
         await liff.init({ liffId: LIFF_ID });
-
         if (!liff.isLoggedIn()) { setMsg('ログイン中...'); liff.login(); return; }
 
         setMsg('プロフィール取得中...');
         const profile = await liff.getProfile();
-        
+
+        // 出勤/退勤の判定（type / state / liff.state すべて対応、in/out 対応）
         const sp = new URLSearchParams(location.search);
         let raw = sp.get('type') || sp.get('state');
         const ls = sp.get('liff.state');
@@ -45,27 +47,41 @@
           raw = inner.get('type') || inner.get('state');
         }
         const type = (raw === 'out' || raw === '退勤') ? '退勤' : '出勤';
-        
-        
-        setMsg('位置情報を取得中...');
-        const coords = await getCoords(); // 失敗してもnullで進む
 
+        setMsg('位置情報を取得中...');
+        const coords = await getCoords();
+
+        // 拠点チェック（どの拠点の範囲にも入っていなければ警告。記録は残す）
+        let warn = '';
+        if (coords) {
+          try {
+            const cfg = await callGas('action=config');
+            const bases = (cfg && cfg.bases) || [];
+            if (bases.length > 0) {
+              let bestD = Infinity, inRange = false;
+              for (let i = 0; i < bases.length; i++) {
+                const d = distM(bases[i].lat, bases[i].lng, coords.lat, coords.lng);
+                if (d < bestD) bestD = d;
+                if (d <= bases[i].radius) inRange = true;
+              }
+              if (!inRange) warn = '⚠️ どの拠点からも離れています（最寄り約' + Math.round(bestD) + 'm）\n（記録は残ります）';
+            }
+          } catch (e) { /* 取得失敗でも打刻は続行 */ }
+        }
+
+        // 送信（画面を閉じても確実に届く sendBeacon）
         const params = new URLSearchParams();
         params.append('contents', JSON.stringify({
-          userId: profile.userId,
-          displayName: profile.displayName,
-          type: type,
-          lat: coords ? coords.lat : '',
-          lng: coords ? coords.lng : ''
+          userId: profile.userId, displayName: profile.displayName,
+          type: type, lat: coords ? coords.lat : '', lng: coords ? coords.lng : ''
         }));
-
-        // sendBeacon = 画面を閉じても送信が完了する確実な方式
         let ok = false;
         try { ok = navigator.sendBeacon(GAS_URL, params); } catch (e) { ok = false; }
-        if (!ok) { fetch(GAS_URL, { method:'POST', mode:'no-cors', keepalive:true, body:params }); }
+        if (!ok) fetch(GAS_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: params });
 
-        setMsg('✅ ' + type + 'を記録しました', 'デバッグ: ' + location.search);
-        setTimeout(closeSafe, 1500);
+        if (warn) setMsg('✅ ' + type + 'を記録しました', warn, true);
+        else setMsg('✅ ' + type + 'を記録しました', coords ? '' : '(位置情報なし)');
+        setTimeout(closeSafe, warn ? 4000 : 1500);
 
       } catch (e) {
         setMsg('⚠️ エラー', e.message);
@@ -82,6 +98,28 @@
           { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
         );
       });
+    }
+
+    function jsonpGet(qs) {
+      return new Promise(function (resolve, reject) {
+        const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const s = document.createElement('script'); let done = false;
+        window[cb] = function (d) { done = true; resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) reject(new Error('jsonp fail')); s.remove(); };
+        s.src = GAS_URL + '?' + qs + '&callback=' + cb;
+        document.head.appendChild(s);
+      });
+    }
+    async function callGas(qs) {
+      try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
+      catch (e) { return await jsonpGet(qs); }
+    }
+
+    function distM(lat1, lng1, lat2, lng2) {
+      const R = 6371000, toR = Math.PI / 180;
+      const dLat = (lat2 - lat1) * toR, dLng = (lng2 - lng1) * toR;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      return 2 * R * Math.asin(Math.sqrt(a));
     }
   </script>
 </body>
