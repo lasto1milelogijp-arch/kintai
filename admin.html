@@ -230,16 +230,16 @@
       return new Promise(function (resolve, reject) {
         const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
         const s = document.createElement('script'); let done = false;
-        window[cb] = function (d) { done = true; resolve(d); delete window[cb]; s.remove(); };
-        s.onerror = function () { if (!done) reject(new Error('jsonp fail')); s.remove(); };
+        const timer = setTimeout(function () { if (!done) { reject(new Error('timeout')); s.remove(); delete window[cb]; } }, 30000);
+        window[cb] = function (d) { done = true; clearTimeout(timer); resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) { clearTimeout(timer); reject(new Error('jsonp fail')); } s.remove(); };
         s.src = GAS_URL + '?' + qs + '&callback=' + cb;
         document.head.appendChild(s);
       });
     }
-    async function callGas(qs) {
-      try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
-      catch (e) { return await jsonpGet(qs); }
-    }
+    // GASはfetchの結果をブラウザから読めない（CORS）ため、毎回JSONPだけを使う
+    // （fetchを挟むとサーバー処理が2回走り、約2倍遅くなる）
+    async function callGas(qs) { return await jsonpGet(qs); }
   </script>
 </body>
 </html>
