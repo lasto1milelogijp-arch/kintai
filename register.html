@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>拠点登録</title>
+  <title>登録</title>
   <style>
     body { font-family: sans-serif; margin: 0; background: #fff; color: #222; }
     .wrap { padding: 24px 20px 40px; max-width: 520px; margin: 0 auto; }
@@ -12,7 +12,9 @@
     .cur { background: #f1f8f3; border: 1px solid #cde8d6; border-radius: 10px; padding: 12px 14px; font-size: 14px; margin-bottom: 18px; }
     label { display: block; font-weight: bold; font-size: 14px; margin: 0 0 8px; }
     select, input[type=text] { width: 100%; box-sizing: border-box; padding: 14px; font-size: 16px; border: 1px solid #ccc; border-radius: 10px; background: #fff; }
-    select:disabled { background: #f3f3f3; color: #999; }
+    .depotbox { padding: 14px; font-size: 16px; border: 1px solid #cde8d6; border-radius: 10px; background: #f1f8f3; min-height: 22px; }
+    .depotbox.warn { background: #fdecec; border-color: #f3b9b9; color: #c0392b; font-size: 14px; }
+    .depotbox .pin { font-weight: bold; font-size: 18px; }
     .btn { display: block; width: 100%; box-sizing: border-box; border: none; border-radius: 12px; margin-top: 18px;
            padding: 16px; font-size: 17px; font-weight: bold; color: #fff; background: #06c755; cursor: pointer; }
     .btn:disabled { background: #bbb; }
@@ -26,14 +28,14 @@
   <div class="wrap">
     <div id="form" class="hidden">
       <h1>登録</h1>
-      <p class="lead">最初に氏名・所属会社・拠点を登録してください。<br>登録は最初の1回だけ。変更したいときもこの画面から行えます。</p>
+      <p class="lead">氏名と所属会社を登録してください。拠点は会社から自動で決まります。<br>登録は最初の1回だけ。変更もこの画面から行えます。</p>
       <div id="cur" class="cur hidden"></div>
       <label for="name">氏名</label>
       <input type="text" id="name" placeholder="例：山田 太郎" autocomplete="name">
       <label for="company">所属会社</label>
       <select id="company"><option value="">― 選択してください ―</option></select>
-      <label for="depot">拠点（働く場所）</label>
-      <select id="depot"><option value="">― 選択してください ―</option></select>
+      <label style="margin-top:16px">拠点（会社から自動）</label>
+      <div id="depotBox" class="depotbox">会社を選ぶと表示されます</div>
       <button class="btn" id="save" disabled>この内容で登録</button>
     </div>
     <div id="done" class="hidden"></div>
@@ -45,31 +47,29 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
 
     let profile = null;
-    let allBases = [];
+    let companyMap = {}; // 会社名 -> {depot, depotId}
     const $ = function (id) { return document.getElementById(id); };
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     function closeSafe() { if (window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
 
-    function fillDepots(selected) {
-      const sel = $('depot');
-      sel.innerHTML = '<option value="">― 選択してください ―</option>';
-      // 会社では絞り込まない（1つの拠点に複数社が入るため）。拠点は全件から選ぶ
-      const groups = {};
-      allBases.forEach(function (b) { (groups[b.network || 'その他'] = groups[b.network || 'その他'] || []).push(b); });
-      Object.keys(groups).forEach(function (g) {
-        const og = document.createElement('optgroup'); og.label = g;
-        groups[g].forEach(function (b) {
-          const o = document.createElement('option'); o.value = b.id;
-          o.textContent = b.name + '（' + b.pref + '）';
-          if (selected && b.id === selected) o.selected = true;
-          og.appendChild(o);
-        });
-        sel.appendChild(og);
-      });
+    function updateDepot() {
+      const c = $('company').value;
+      const box = $('depotBox');
+      box.classList.remove('warn');
+      if (!c) { box.textContent = '会社を選ぶと表示されます'; validate(); return; }
+      const info = companyMap[c] || {};
+      if (info.depotId) {
+        box.innerHTML = '<span class="pin">📍 ' + (info.depot || '') + '</span>';
+      } else {
+        box.classList.add('warn');
+        box.textContent = '⚠️ この会社の拠点「' + (info.depot || '未設定') + '」が拠点シートに見つかりません。管理者に連絡してください。';
+      }
       validate();
     }
     function validate() {
-      $('save').disabled = !($('name').value.trim() && $('company').value && $('depot').value);
+      const c = $('company').value;
+      const ok = $('name').value.trim() && c && companyMap[c] && companyMap[c].depotId;
+      $('save').disabled = !ok;
     }
 
     window.onload = async function () {
@@ -79,30 +79,26 @@
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
 
-        const list = await callGas('action=base_list');
-        allBases = (list && list.bases) || [];
         const comp = await callGas('action=company_list');
         const companies = (comp && comp.companies) || [];
         const csel = $('company');
         companies.forEach(function (c) {
-          const o = document.createElement('option'); o.value = c; o.textContent = c; csel.appendChild(o);
+          companyMap[c.name] = { depot: c.depot, depotId: c.depotId };
+          const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; csel.appendChild(o);
         });
-        fillDepots('');
 
         const my = await callGas('action=my_depot&userId=' + encodeURIComponent(profile.userId));
         if (my && my.registered) {
-          $('cur').textContent = '現在の登録：' + (my.name || '') + '／' + (my.company || '') + '／' + my.depotName;
+          $('cur').textContent = '現在の登録：' + (my.name || '') + '／' + (my.company || '') + '／' + (my.depotName || '');
           $('cur').classList.remove('hidden');
           $('name').value = my.name || '';
           csel.value = my.company || '';
-          fillDepots(my.depot);
         }
         if (!$('name').value) $('name').value = profile.displayName || '';
 
         $('name').oninput = validate;
-        csel.onchange = validate;
-        $('depot').onchange = validate;
-        validate();
+        csel.onchange = updateDepot;
+        updateDepot();
         $('save').onclick = doSave;
         $('form').classList.remove('hidden');
       } catch (e) {
@@ -112,8 +108,9 @@
     };
 
     async function doSave() {
-      const name = $('name').value.trim(), company = $('company').value, depot = $('depot').value;
-      if (!name || !company || !depot) return;
+      const name = $('name').value.trim(), company = $('company').value;
+      const info = companyMap[company] || {};
+      if (!name || !company || !info.depotId) return;
       $('save').disabled = true;
       $('form').classList.add('hidden');
       $('done').innerHTML = '<span class="spin"></span>登録中…';
@@ -122,19 +119,19 @@
       const params = new URLSearchParams();
       params.append('contents', JSON.stringify({
         action: 'register', userId: profile.userId, displayName: profile.displayName,
-        name: name, company: company, depot: depot
+        name: name, company: company, depot: info.depotId
       }));
       try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
 
-      let ok = false, depotName = '';
+      let ok = false, depotName = info.depot || '';
       for (let t = 0; t < 6; t++) {
         await sleep(1200);
         try {
           const my = await callGas('action=my_depot&userId=' + encodeURIComponent(profile.userId));
-          if (my && my.registered && my.depot === depot) { ok = true; depotName = my.depotName; break; }
+          if (my && my.registered && my.company === company) { ok = true; depotName = my.depotName || depotName; break; }
         } catch (e) {}
       }
-      $('done').innerHTML = '✅ 登録しました<br><span style="font-size:20px">' + name + '<br>' + company + '／' + (depotName || '') + '</span>'
+      $('done').innerHTML = '✅ 登録しました<br><span style="font-size:20px">' + name + '<br>' + company + '／' + depotName + '</span>'
         + '<br><span style="font-size:14px;color:#888;font-weight:normal">メニューからご利用いただけます</span>';
       setTimeout(closeSafe, 2600);
     }
@@ -143,16 +140,15 @@
       return new Promise(function (resolve, reject) {
         const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
         const s = document.createElement('script'); let done = false;
-        window[cb] = function (d) { done = true; resolve(d); delete window[cb]; s.remove(); };
-        s.onerror = function () { if (!done) reject(new Error('jsonp fail')); s.remove(); };
+        const timer = setTimeout(function () { if (!done) { reject(new Error('timeout')); s.remove(); delete window[cb]; } }, 30000);
+        window[cb] = function (d) { done = true; clearTimeout(timer); resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) { clearTimeout(timer); reject(new Error('jsonp fail')); } s.remove(); };
         s.src = GAS_URL + '?' + qs + '&callback=' + cb;
         document.head.appendChild(s);
       });
     }
-    async function callGas(qs) {
-      try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
-      catch (e) { return await jsonpGet(qs); }
-    }
+    // GASはfetch結果を読めない（CORS）ため読み取りはJSONPのみ
+    async function callGas(qs) { return await jsonpGet(qs); }
   </script>
 </body>
 </html>
