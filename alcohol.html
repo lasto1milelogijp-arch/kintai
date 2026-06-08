@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>アルコールチェック</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #fff; color: #222; }
+    .wrap { padding: 24px 20px 40px; max-width: 520px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 4px 0 6px; }
+    .lead { color: #666; font-size: 14px; margin: 0 0 22px; line-height: 1.6; }
+    .btn { display: block; width: 100%; box-sizing: border-box; border: none; border-radius: 12px;
+           padding: 18px; font-size: 18px; font-weight: bold; color: #fff; background: #06c755; cursor: pointer; }
+    .btn:active { opacity: .85; }
+    .btn.sub { background: #fff; color: #06c755; border: 2px solid #06c755; margin-top: 12px; }
+    #file { display: none; }
+    #status { text-align: center; padding: 30px 10px; font-size: 17px; font-weight: bold; line-height: 1.6; }
+    #status .spin { display:inline-block; width:22px; height:22px; border:3px solid #ddd; border-top-color:#06c755;
+                    border-radius:50%; animation:sp 0.8s linear infinite; vertical-align:-4px; margin-right:8px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    .card { border-radius: 14px; padding: 22px 18px; text-align: center; margin: 8px 0 18px; border: 2px solid #ddd; }
+    .card .judge { font-size: 26px; font-weight: bold; margin: 6px 0 10px; }
+    .card .row { font-size: 15px; color: #444; margin: 3px 0; }
+    .card .val { font-size: 20px; font-weight: bold; }
+    .ok    { border-color:#1f9d55; } .ok .judge    { color:#1f9d55; }
+    .warn  { border-color:#d9772b; } .warn .judge  { color:#d9772b; }
+    .over  { border-color:#d23c3c; } .over .judge  { color:#d23c3c; }
+    .err   { border-color:#888; }    .err .judge   { color:#888; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="intro">
+      <h1>アルコールチェック</h1>
+      <p class="lead">出勤時・退勤時に検知器の<b>結果画面を撮影</b>してください。<br>これが出勤・退勤の打刻も兼ねます。</p>
+      <button class="btn" id="shootIn">🌅 出勤のチェック</button>
+      <button class="btn sub" id="shootOut" style="margin-top:12px">🌙 退勤のチェック</button>
+    </div>
+
+    <div id="status" class="hidden"></div>
+
+    <div id="result" class="hidden">
+      <div id="card" class="card"></div>
+      <button class="btn sub" id="again">📷 もう一度撮影</button>
+      <button class="btn sub" id="close">閉じる</button>
+    </div>
+
+    <input type="file" id="file" accept="image/*" capture="environment">
+  </div>
+
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+  <script>
+    const LIFF_ID = "2010310932-MO7e9yXF";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
+
+    let profile = null;
+    let curType = '出勤';
+    const $ = function (id) { return document.getElementById(id); };
+    function show(id) { ['intro', 'status', 'result'].forEach(function (x) { $(x).classList.toggle('hidden', x !== id); }); }
+    function setStatus(html) { $('status').innerHTML = html; show('status'); }
+    function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    function closeSafe() { if (window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
+    function getCoords() {
+      return new Promise(function (resolve) {
+        if (!navigator.geolocation) return resolve(null);
+        navigator.geolocation.getCurrentPosition(
+          function (p) { resolve({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+          function () { resolve(null); },
+          { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+        );
+      });
+    }
+
+    window.onload = async function () {
+      try {
+        if (typeof liff === 'undefined') throw new Error('SDK読み込み失敗');
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) { liff.login(); return; }
+        profile = await liff.getProfile();
+      } catch (e) {
+        setStatus('⚠️ エラー<br><span style="font-size:14px;color:#888">' + (e.message || e) + '</span>');
+        return;
+      }
+      $('shootIn').onclick = function () { curType = '出勤'; $('file').click(); };
+      $('shootOut').onclick = function () { curType = '退勤'; $('file').click(); };
+      $('again').onclick = function () { $('file').value = ''; $('file').click(); };
+      $('close').onclick = closeSafe;
+      $('file').onchange = function () { if (this.files && this.files[0]) handleFile(this.files[0]); };
+    };
+
+    async function handleFile(file) {
+      setStatus('<span class="spin"></span>' + curType + 'の判定中…<br><span style="font-size:14px;color:#888">画像と位置を確認しています</span>');
+      const reqId = 'a_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+      let b64;
+      try { b64 = await compress(file); }
+      catch (e) { setStatus('⚠️ 画像の読み込みに失敗しました'); return; }
+      const coords = await getCoords();
+
+      const params = new URLSearchParams();
+      params.append('contents', JSON.stringify({
+        action: 'alcohol', userId: profile.userId, displayName: profile.displayName,
+        image: b64, mime: 'image/jpeg', reqId: reqId,
+        type: curType, lat: coords ? coords.lat : '', lng: coords ? coords.lng : ''
+      }));
+      // 送信（応答は読まず、結果は下のポーリングで取得）
+      try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
+
+      // 結果が書き込まれるまで数秒ポーリング
+      for (let t = 0; t < 12; t++) {
+        await sleep(2000);
+        try {
+          const r = await callGas('action=alcohol_result&userId=' + encodeURIComponent(profile.userId) + '&reqId=' + encodeURIComponent(reqId));
+          if (r && r.found) { showResult(r); return; }
+        } catch (e) {}
+      }
+      setStatus('⏳ 確認に時間がかかっています<br><span style="font-size:14px;color:#888">記録は進んでいます。少し待って再度お試しください。</span>');
+    }
+
+    function showResult(r) {
+      const judge = r.judge || '';
+      let cls = 'err', icon = '❓';
+      if (judge === '検出なし') { cls = 'ok'; icon = '✅'; }
+      else if (judge === '酒気帯び基準超過') { cls = 'over'; icon = '⛔'; }
+      else if (judge === '微量検出・要確認') { cls = 'warn'; icon = '⚠️'; }
+      else if (judge === '読取エラー') { cls = 'err'; icon = '⚠️'; }
+
+      let html = '<div style="font-size:13px;color:#888;margin-bottom:2px">' + curType + 'のチェック</div>';
+      html += '<div class="judge">' + icon + ' ' + (judge || '判定不明') + '</div>';
+      if (judge === '読取エラー') {
+        html += '<div class="row">うまく読み取れませんでした。<br>明るい場所で、もう一度撮影してください。</div>';
+      } else {
+        if (r.value !== '' && r.value != null) html += '<div class="row val">測定値: ' + r.value + ' mg/L</div>';
+        if (r.name) html += '<div class="row">氏名: ' + r.name + '</div>';
+        if (r.date) html += '<div class="row">日付: ' + r.date + '</div>';
+        if (r.time) html += '<div class="row">時間: ' + r.time + '</div>';
+      }
+      $('card').className = 'card ' + cls;
+      $('card').innerHTML = html;
+      show('result');
+    }
+
+    // 画像を最大1280pxに圧縮してbase64で返す（送信を軽く・速く）
+    function compress(file) {
+      return new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function () {
+          const img = new Image();
+          img.onload = function () {
+            const max = 1280; let w = img.width, h = img.height;
+            if (w > h && w > max) { h = Math.round(h * max / w); w = max; }
+            else if (h >= w && h > max) { w = Math.round(w * max / h); h = max; }
+            const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+            cv.getContext('2d').drawImage(img, 0, 0, w, h);
+            resolve(cv.toDataURL('image/jpeg', 0.7).replace(/^data:[^,]+,/, ''));
+          };
+          img.onerror = reject; img.src = reader.result;
+        };
+        reader.onerror = reject; reader.readAsDataURL(file);
+      });
+    }
+
+    function jsonpGet(qs) {
+      return new Promise(function (resolve, reject) {
+        const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const s = document.createElement('script'); let done = false;
+        window[cb] = function (d) { done = true; resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) reject(new Error('jsonp fail')); s.remove(); };
+        s.src = GAS_URL + '?' + qs + '&callback=' + cb;
+        document.head.appendChild(s);
+      });
+    }
+    async function callGas(qs) {
+      try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
+      catch (e) { return await jsonpGet(qs); }
+    }
+  </script>
+</body>
+</html>
