@@ -1,119 +1,245 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>管理者画面</title>
-<style>
-  body{font-family:sans-serif;margin:0;padding:16px;color:#222;background:#fafafa}
-  h2{font-size:16px;margin:18px 0 8px;border-left:5px solid #06c755;padding-left:8px}
-  .card{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:12px;margin-bottom:10px}
-  .meta{font-size:14px;margin-bottom:8px}.meta b{font-size:15px}
-  .btns{display:flex;gap:8px}
-  .btns button{flex:1;padding:10px;font-size:14px;font-weight:bold;border:none;border-radius:8px;color:#fff}
-  .ok{background:#06c755}.no{background:#e0564b}
-  table{width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:8px;overflow:hidden}
-  th,td{padding:8px 6px;border-bottom:1px solid #eee;text-align:center}th{background:#f0f0f0}
-  #status{text-align:center;color:#666;padding:30px}
-  .denied{background:#fff;border:1px solid #e8e8e8;border-radius:10px;padding:20px;text-align:center}
-  .idbox{font-family:monospace;font-size:12px;background:#f3f3f3;padding:10px;border-radius:6px;word-break:break-all;margin-top:10px}
-  .empty{color:#888;font-size:14px;padding:10px;text-align:center}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理者画面</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #f7f7f7; color: #222; }
+    .wrap { padding: 16px 14px 40px; max-width: 640px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 6px 0 2px; }
+    .scope { color: #06934a; font-size: 13px; font-weight: bold; margin: 0 0 10px; }
+    .filterbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+    .chip { border: 1px solid #cfcfcf; background: #fff; color: #555; border-radius: 16px; padding: 6px 14px; font-size: 13px; font-weight: bold; }
+    .chip.on { background: #06c755; border-color: #06c755; color: #fff; }
+    h2 { font-size: 15px; margin: 18px 0 8px; padding-left: 8px; border-left: 4px solid #06c755; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; font-size: 13px; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #f0f0f0; font-size: 12px; color: #555; }
+    .dep { color: #777; font-size: 11px; }
+    .empty { color: #999; font-size: 13px; padding: 10px 4px; }
+    .badge { padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: bold; color: #fff; white-space: nowrap; }
+    .ok { background: #1f9d55; } .over { background: #d23c3c; } .warn { background: #d9772b; } .err { background: #888; }
+    .btns button { border: none; border-radius: 6px; color: #fff; font-weight: bold; padding: 6px 10px; margin-right: 5px; font-size: 12px; }
+    .ap { background: #1f9d55; } .rj { background: #d23c3c; }
+    #denied { padding: 26px 14px; text-align: center; line-height: 1.7; }
+    #denied .id { user-select: all; background: #eee; padding: 6px 10px; border-radius: 6px; display: inline-block; margin: 8px 0 4px; font-size: 12px; word-break: break-all; }
+    #applyBox { max-width: 420px; margin: 18px auto 0; text-align: left; background: #fff; border: 1px solid #e3e3e3; border-radius: 12px; padding: 16px; }
+    #applyBox label { display: block; font-weight: bold; font-size: 13px; margin: 10px 0 6px; }
+    #applyBox select, #applyBox textarea { width: 100%; box-sizing: border-box; padding: 11px; font-size: 15px; border: 1px solid #ccc; border-radius: 8px; }
+    #applyBox textarea { height: 56px; resize: vertical; }
+    .applybtn { width: 100%; border: none; border-radius: 10px; background: #06c755; color: #fff; font-weight: bold; padding: 14px; font-size: 16px; margin-top: 14px; }
+    .applybtn:disabled { background: #bbb; }
+    #loading { padding: 40px; text-align: center; color: #666; }
+    .reqcard { background: #fff; border: 1px solid #ffd9a8; border-left: 5px solid #e8870c; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .reqcard .nm { font-weight: bold; } .reqcard .meta { color: #777; font-size: 12px; margin: 2px 0 8px; }
+    .reload { display:block; margin: 18px auto 0; background:#fff; border:1px solid #ccc; border-radius:8px; padding:10px 16px; font-size:13px; }
+  </style>
 </head>
 <body>
-  <div id="status">読み込み中...</div>
-  <div id="app" style="display:none">
-    <h2>今日の出勤状況（<span id="today"></span>）</h2>
-    <table><thead><tr><th>氏名</th><th>出勤</th><th>退勤</th><th>勤務</th></tr></thead><tbody id="attBody"></tbody></table>
-    <h2>承認待ちのシフト</h2>
-    <div id="pending"></div>
+  <div class="wrap">
+    <div id="loading">読み込み中…</div>
+    <div id="main" style="display:none">
+      <h1 id="title">管理者画面</h1>
+      <div class="scope" id="scope"></div>
+      <div id="filter" class="filterbar" style="display:none"></div>
+      <div id="reqWrap" style="display:none"><h2>管理者申請</h2><div id="req"></div></div>
+      <h2>今日の出勤状況</h2>
+      <div id="att"></div>
+      <h2>承認待ちシフト</h2>
+      <div id="shift"></div>
+      <h2>今日のアルコールチェック</h2>
+      <div id="alc"></div>
+      <button class="reload" id="reload">最新に更新</button>
+    </div>
+    <div id="denied" style="display:none">
+      <p>この画面を見る権限がありません。<br>管理者として申請するか、下のIDをオーナーに伝えてください。</p>
+      <div class="id" id="yourId"></div>
+      <div id="applyBox">
+        <div style="font-weight:bold;font-size:15px;margin-bottom:4px">管理者として申請する</div>
+        <label for="adepot">担当したい拠点</label>
+        <select id="adepot"><option value="">― 選択してください ―</option></select>
+        <label for="anote">ひとこと（任意）</label>
+        <textarea id="anote" placeholder="例：◯◯拠点の責任者です"></textarea>
+        <button class="applybtn" id="applyBtn" disabled>この内容で申請する</button>
+        <div id="applyMsg" style="text-align:center;margin-top:10px;font-weight:bold"></div>
+      </div>
+    </div>
   </div>
-  <div id="denied" class="denied" style="display:none">
-    <div>このアカウントには管理者権限がありません。</div>
-    <div style="margin-top:8px;font-size:13px;color:#666">下のIDを「管理者」シートのA列に追加すると管理者になれます。</div>
-    <div class="idbox" id="myid"></div>
-  </div>
 
-<script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
-<script>
-  const LIFF_ID = "2010310932-MO7e9yXF";
-  const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
-  let userId = null;
-  const enc = encodeURIComponent;
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+  <script>
+    const LIFF_ID = "2010310932-MO7e9yXF";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
 
-  function jsonp(params){
-    return new Promise(function(resolve, reject){
-      const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
-      const s=document.createElement('script'); let done=false;
-      window[cb]=function(d){ done=true; resolve(d); delete window[cb]; s.remove(); };
-      s.onerror=function(){ if(!done) reject(new Error('通信失敗')); s.remove(); };
-      s.src=GAS_URL+'?'+params+'&callback='+cb;
-      document.head.appendChild(s);
-    });
-  }
+    let profile = null;
+    let curData = { attendance: [], pending: [], alcohol: [] };
+    let curCompany = ''; // '' = すべて
+    const $ = function (id) { return document.getElementById(id); };
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
 
-  window.onload = async function(){
-    try{
-      await liff.init({ liffId: LIFF_ID });
-      if(!liff.isLoggedIn()){ liff.login(); return; }
-      const p = await liff.getProfile();
-      userId = p.userId;
-      loadAll();
-    }catch(e){ document.getElementById('status').innerText='エラー: '+e.message; }
-  };
+    window.onload = async function () {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) { liff.login(); return; }
+        profile = await liff.getProfile();
+        $('reload').onclick = load;
+        await load();
+      } catch (e) {
+        $('loading').textContent = '⚠️ エラー: ' + (e.message || e);
+      }
+    };
 
-  async function loadAll(){
-    const st=document.getElementById('status');
-    st.style.display='block'; st.innerText='読み込み中...';
-    try{
-      const data = await jsonp('action=admin_data&userId='+enc(userId));
-      if(data.status==='denied'){
-        st.style.display='none';
-        document.getElementById('denied').style.display='block';
-        document.getElementById('myid').innerText = data.yourId || userId;
+    async function load() {
+      $('loading').style.display = 'block';
+      $('main').style.display = 'none';
+      $('denied').style.display = 'none';
+      const d = await callGas('action=admin_data&userId=' + encodeURIComponent(profile.userId));
+      if (!d || d.status !== 'ok') {
+        $('yourId').textContent = (d && d.yourId) || profile.userId;
+        await setupApply();
+        $('loading').style.display = 'none';
+        $('denied').style.display = 'block';
         return;
       }
-      render(data);
-    }catch(e){ st.innerText='読み込みに失敗しました'; }
-  }
+      $('scope').textContent = '担当範囲：' + (d.scope || '') + (d.manager ? '（' + d.manager + '）' : '');
+      renderReq(d.adminRequests || []);
+      curData = { attendance: d.attendance || [], pending: d.pending || [], alcohol: d.alcohol || [] };
+      buildFilter();
+      renderAll();
+      $('loading').style.display = 'none';
+      $('main').style.display = 'block';
+    }
 
-  function render(data){
-    document.getElementById('status').style.display='none';
-    document.getElementById('app').style.display='block';
-    document.getElementById('today').innerText = data.today||'';
-    const ab=document.getElementById('attBody'); ab.innerHTML='';
-    if(!data.attendance||data.attendance.length===0){
-      ab.innerHTML='<tr><td colspan="4" class="empty">本日の打刻はまだありません</td></tr>';
-    }else{
-      data.attendance.forEach(function(r){
-        ab.innerHTML+='<tr><td>'+(r.name||'')+'</td><td>'+(r.in||'-')+'</td><td>'+(r.out||'-')+'</td><td>'+(r.work||'-')+'</td></tr>';
+    let applyLoaded = false;
+    async function setupApply() {
+      if (applyLoaded) return; applyLoaded = true;
+      try {
+        const list = await callGas('action=base_list');
+        const bases = (list && list.bases) || [];
+        const sel = $('adepot');
+        const groups = {};
+        bases.forEach(function (b) { (groups[b.network] = groups[b.network] || []).push(b); });
+        Object.keys(groups).forEach(function (nw) {
+          const og = document.createElement('optgroup'); og.label = nw;
+          groups[nw].forEach(function (b) {
+            const o = document.createElement('option'); o.value = b.id; o.textContent = b.name + '（' + b.pref + '）'; og.appendChild(o);
+          });
+          sel.appendChild(og);
+        });
+        sel.onchange = function () { $('applyBtn').disabled = !sel.value; };
+      } catch (e) {}
+      $('applyBtn').onclick = submitApply;
+    }
+    async function submitApply() {
+      const depot = $('adepot').value; if (!depot) return;
+      $('applyBtn').disabled = true;
+      $('applyMsg').textContent = '送信中…';
+      const params = new URLSearchParams();
+      params.append('contents', JSON.stringify({
+        action: 'admin_apply', userId: profile.userId, displayName: profile.displayName, depot: depot, note: $('anote').value || ''
+      }));
+      try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
+      $('applyMsg').textContent = '✅ 申請しました。承認されると通知が届きます。';
+    }
+
+    function renderReq(rows) {
+      if (!rows.length) { $('reqWrap').style.display = 'none'; return; }
+      let h = '';
+      rows.forEach(function (r) {
+        h += '<div class="reqcard"><div class="nm">' + esc(r.name) + '</div>'
+          + '<div class="meta">担当希望：' + esc(r.depot || r.depotId) + (r.note ? '／' + esc(r.note) : '') + '</div>'
+          + '<div class="btns"><button class="ap" onclick="decideReq(' + r.row + ',\'承認\')">承認</button>'
+          + '<button class="rj" onclick="decideReq(' + r.row + ',\'却下\')">却下</button></div></div>';
+      });
+      $('req').innerHTML = h; $('reqWrap').style.display = 'block';
+    }
+    async function decideReq(row, decision) {
+      if (!confirm('この申請を「' + decision + '」にしますか？')) return;
+      await callGas('action=admin_decide&userId=' + encodeURIComponent(profile.userId) + '&row=' + row + '&decision=' + encodeURIComponent(decision));
+      await load();
+    }
+
+    function buildFilter() {
+      const set = {};
+      ['attendance', 'pending', 'alcohol'].forEach(function (k) {
+        curData[k].forEach(function (r) { if (r.company) set[r.company] = 1; });
+      });
+      const companies = Object.keys(set).sort();
+      if (companies.length < 2) { $('filter').style.display = 'none'; curCompany = ''; return; }
+      if (curCompany && companies.indexOf(curCompany) < 0) curCompany = ''; // 消えた会社は解除
+      let h = '<button class="chip' + (curCompany === '' ? ' on' : '') + '" data-c="">すべて</button>';
+      companies.forEach(function (c) {
+        h += '<button class="chip' + (curCompany === c ? ' on' : '') + '" data-c="' + esc(c) + '">' + esc(c) + '</button>';
+      });
+      const bar = $('filter');
+      bar.innerHTML = h; bar.style.display = 'flex';
+      Array.prototype.forEach.call(bar.querySelectorAll('.chip'), function (b) {
+        b.onclick = function () { curCompany = b.getAttribute('data-c'); buildFilter(); renderAll(); };
       });
     }
-    const pe=document.getElementById('pending'); pe.innerHTML='';
-    if(!data.pending||data.pending.length===0){
-      pe.innerHTML='<div class="empty">承認待ちのシフトはありません</div>';
-    }else{
-      data.pending.forEach(function(s){
-        const div=document.createElement('div'); div.className='card';
-        div.innerHTML='<div class="meta"><b>'+(s.name||'')+'</b>　'+s.date+'　'+(s.start||'')+'〜'+(s.end||'')+(s.note?'　('+s.note+')':'')+'</div>';
-        const btns=document.createElement('div'); btns.className='btns';
-        const ok=document.createElement('button'); ok.className='ok'; ok.innerText='確定';
-        const no=document.createElement('button'); no.className='no'; no.innerText='却下';
-        ok.onclick=function(){ decide(s.row,'確定',div,ok,no); };
-        no.onclick=function(){ decide(s.row,'却下',div,ok,no); };
-        btns.appendChild(ok); btns.appendChild(no); div.appendChild(btns); pe.appendChild(div);
+    function byCompany(rows) {
+      if (!curCompany) return rows;
+      return rows.filter(function (r) { return r.company === curCompany; });
+    }
+    function renderAll() {
+      renderAtt(byCompany(curData.attendance));
+      renderShift(byCompany(curData.pending));
+      renderAlc(byCompany(curData.alcohol));
+    }
+
+    function renderAtt(rows) {
+      if (!rows.length) { $('att').innerHTML = '<div class="empty">本日の出勤記録はまだありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>出勤</th><th>退勤</th><th>勤務</th></tr>';
+      rows.forEach(function (r) {
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td><td>' + esc(r.in) + '</td><td>' + esc(r.out) + '</td><td>' + esc(r.work) + '</td></tr>';
+      });
+      $('att').innerHTML = h + '</table>';
+    }
+
+    function renderShift(rows) {
+      if (!rows.length) { $('shift').innerHTML = '<div class="empty">承認待ちのシフトはありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>日付</th><th>時間</th><th>操作</th></tr>';
+      rows.forEach(function (r) {
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + '</div></td><td>' + esc(r.date) + '</td><td>' + esc(r.start) + '〜' + esc(r.end) + '</td>'
+          + '<td class="btns"><button class="ap" onclick="decide(' + r.row + ',\'確定\')">確定</button><button class="rj" onclick="decide(' + r.row + ',\'却下\')">却下</button></td></tr>';
+      });
+      $('shift').innerHTML = h + '</table>';
+    }
+
+    function renderAlc(rows) {
+      if (!rows.length) { $('alc').innerHTML = '<div class="empty">本日のアルコールチェックはまだありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>時間</th><th>結果</th><th>判定</th></tr>';
+      rows.forEach(function (r) {
+        let cls = 'err';
+        if (r.judge === '検出なし') cls = 'ok';
+        else if (r.judge === '酒気帯び基準超過') cls = 'over';
+        else if (r.judge === '微量検出・要確認') cls = 'warn';
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td><td>' + esc(r.time) + '</td><td>' + esc(r.value) + '</td><td><span class="badge ' + cls + '">' + esc(r.judge || '―') + '</span></td></tr>';
+      });
+      $('alc').innerHTML = h + '</table>';
+    }
+
+    async function decide(row, decision) {
+      if (!confirm('このシフトを「' + decision + '」にしますか？')) return;
+      await callGas('action=shift_decision&userId=' + encodeURIComponent(profile.userId) + '&row=' + row + '&decision=' + encodeURIComponent(decision));
+      await load();
+    }
+
+    function jsonpGet(qs) {
+      return new Promise(function (resolve, reject) {
+        const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const s = document.createElement('script'); let done = false;
+        window[cb] = function (d) { done = true; resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) reject(new Error('jsonp fail')); s.remove(); };
+        s.src = GAS_URL + '?' + qs + '&callback=' + cb;
+        document.head.appendChild(s);
       });
     }
-  }
-
-  async function decide(row, decision, div, ok, no){
-    ok.disabled=true; no.disabled=true; ok.innerText='...';
-    try{
-      const res = await jsonp('action=shift_decision&userId='+enc(userId)+'&row='+row+'&decision='+enc(decision));
-      if(res.status==='ok'){ div.style.opacity=0.5; div.innerHTML='<div class="meta">'+decision+'しました</div>'; }
-      else { ok.disabled=false; no.disabled=false; ok.innerText='確定'; alert('失敗しました'); }
-    }catch(e){ ok.disabled=false; no.disabled=false; ok.innerText='確定'; alert('通信に失敗しました'); }
-  }
-</script>
+    async function callGas(qs) {
+      try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
+      catch (e) { return await jsonpGet(qs); }
+    }
+  </script>
 </body>
 </html>
