@@ -36,6 +36,12 @@
       <select id="company"><option value="">― 選択してください ―</option></select>
       <label style="margin-top:16px">拠点（会社から自動）</label>
       <div id="depotBox" class="depotbox">会社を選ぶと表示されます</div>
+      <label for="role" style="margin-top:16px">区分</label>
+      <select id="role">
+        <option value="ドライバー">ドライバー</option>
+        <option value="内勤">内勤（倉庫・システムなど）</option>
+      </select>
+      <p class="note" style="font-size:12px;color:#999;margin-top:4px">シフト申請は「内勤」の方のみ利用できます。</p>
       <button class="btn" id="save" disabled>この内容で登録</button>
     </div>
     <div id="done" class="hidden"></div>
@@ -93,6 +99,7 @@
           $('cur').classList.remove('hidden');
           $('name').value = my.name || '';
           csel.value = my.company || '';
+          if (my.role) document.getElementById('role').value = my.role;
         }
         if (!$('name').value) $('name').value = profile.displayName || '';
 
@@ -119,7 +126,7 @@
       const params = new URLSearchParams();
       params.append('contents', JSON.stringify({
         action: 'register', userId: profile.userId, displayName: profile.displayName,
-        name: name, company: company, depot: info.depotId
+        name: name, company: company, depot: info.depotId, role: document.getElementById('role').value
       }));
       try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
 
