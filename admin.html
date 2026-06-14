@@ -44,6 +44,7 @@
       <div class="scope" id="scope"></div>
       <div id="filter" class="filterbar" style="display:none"></div>
       <div id="reqWrap" style="display:none"><h2>管理者申請</h2><div id="req"></div></div>
+      <div id="overWrap" style="display:none"><h2 id="overTtl">直近7日 50時間超</h2><div id="over"></div></div>
       <h2>今日の出勤状況</h2>
       <div id="att"></div>
       <h2>承認待ちシフト</h2>
@@ -106,7 +107,8 @@
       }
       $('scope').textContent = '担当範囲：' + (d.scope || '') + (d.manager ? '（' + d.manager + '）' : '');
       renderReq(d.adminRequests || []);
-      curData = { attendance: d.attendance || [], pending: d.pending || [], alcohol: d.alcohol || [], corrections: d.corrections || [] };
+      curData = { attendance: d.attendance || [], pending: d.pending || [], alcohol: d.alcohol || [], corrections: d.corrections || [], overHours: d.overHours || [] };
+      $('overTtl').textContent = '直近7日 ' + (d.overThreshold || 50) + '時間超';
       buildFilter();
       renderAll();
       $('loading').style.display = 'none';
@@ -162,7 +164,7 @@
 
     function buildFilter() {
       const set = {};
-      ['attendance', 'pending', 'alcohol', 'corrections'].forEach(function (k) {
+      ['attendance', 'pending', 'alcohol', 'corrections', 'overHours'].forEach(function (k) {
         curData[k].forEach(function (r) { if (r.company) set[r.company] = 1; });
       });
       const companies = Object.keys(set).sort();
@@ -183,10 +185,23 @@
       return rows.filter(function (r) { return r.company === curCompany; });
     }
     function renderAll() {
+      renderOver(byCompany(curData.overHours));
       renderAtt(byCompany(curData.attendance));
       renderShift(byCompany(curData.pending));
       renderCorr(byCompany(curData.corrections));
       renderAlc(byCompany(curData.alcohol));
+    }
+
+    function renderOver(rows) {
+      if (!rows.length) { $('overWrap').style.display = 'none'; return; }
+      let h = '<table><tr><th>氏名</th><th>拠点・会社</th><th>直近7日</th></tr>';
+      rows.forEach(function (r) {
+        const hh = Math.floor(r.hours), mm = Math.round((r.hours - hh) * 60);
+        h += '<tr><td>' + esc(r.name) + '</td>'
+          + '<td>' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</td>'
+          + '<td><span class="badge warn">' + hh + '時間' + (mm ? mm + '分' : '') + '</span></td></tr>';
+      });
+      $('over').innerHTML = h + '</table>'; $('overWrap').style.display = 'block';
     }
 
     function renderCorr(rows) {
