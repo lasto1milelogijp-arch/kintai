@@ -93,14 +93,15 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()){ liff.login(); return; }
         profile = await liff.getProfile();
-        const my = await callGas('action=my_depot&userId='+encodeURIComponent(profile.userId));
-        const role = (my && my.role) || 'ドライバー';
+        const d = await callGas('action=shift_page&userId='+encodeURIComponent(profile.userId));
+        const role = (d && d.role) || 'ドライバー';
         $('msg').classList.add('hidden');
         if (role !== '内勤'){ $('gate').classList.remove('hidden'); return; }
         $('date').value = todayStr();
         ['date','start','end'].forEach(function(id){ $(id).oninput=validate; });
         $('save').onclick = doSave;
-        await loadList();
+        $('listTtl').textContent = (d.month||'今月').replace('/','年')+'月の申請';
+        renderList(d.rows);
         $('main').classList.remove('hidden');
       }catch(e){ $('msg').textContent='⚠️ エラー: '+(e.message||e); }
     };
