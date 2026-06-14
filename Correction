@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>勤怠の修正申請</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #fff; color: #222; }
+    .wrap { padding: 22px 20px 40px; max-width: 520px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 4px 0 6px; }
+    .lead { color: #666; font-size: 14px; margin: 0 0 18px; line-height: 1.6; }
+    label { display: block; font-weight: bold; font-size: 14px; margin: 16px 0 6px; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 13px; font-size: 16px; border: 1px solid #ccc; border-radius: 10px; background: #fff; }
+    textarea { min-height: 70px; resize: vertical; }
+    .row { display: flex; gap: 10px; }
+    .row > div { flex: 1; }
+    .cur { background: #eef4fb; border: 1px solid #cfe0f3; border-radius: 10px; padding: 10px 12px; font-size: 13px; color: #355; margin-top: 8px; }
+    .btn { display: block; width: 100%; box-sizing: border-box; border: none; border-radius: 12px; margin-top: 22px;
+           padding: 16px; font-size: 17px; font-weight: bold; color: #fff; background: #2d7dd2; cursor: pointer; }
+    .btn:disabled { background: #bbb; }
+    #done { text-align: center; padding: 30px 10px; font-size: 18px; font-weight: bold; line-height: 1.7; }
+    .hidden { display: none; }
+    .spin { display:inline-block; width:20px; height:20px; border:3px solid #ddd; border-top-color:#2d7dd2; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-3px; margin-right:6px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    .note { font-size: 12px; color: #999; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="form" class="hidden">
+      <h1>勤怠の修正申請</h1>
+      <p class="lead">打刻の忘れ・間違いを申請します。管理者が承認すると勤務時間に反映されます。</p>
+      <label for="date">対象の日付</label>
+      <input type="date" id="date">
+      <div id="cur" class="cur hidden"></div>
+      <div class="row">
+        <div><label for="in">出勤時刻</label><input type="time" id="in" step="1"></div>
+        <div><label for="out">退勤時刻</label><input type="time" id="out" step="1"></div>
+      </div>
+      <p class="note">片方だけの修正でもOKです（空欄は変更しません）。</p>
+      <label for="reason">理由</label>
+      <textarea id="reason" placeholder="例：退勤の打刻を忘れたため"></textarea>
+      <button class="btn" id="save" disabled>この内容で申請</button>
+    </div>
+    <div id="done" class="hidden"></div>
+  </div>
+
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+  <script>
+    const LIFF_ID = "2010310932-MO7e9yXF";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
+    let profile = null;
+    const $ = function (id) { return document.getElementById(id); };
+    function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+    function closeSafe(){ if (window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
+    function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+    function validate(){ $('save').disabled = !($('date').value && ($('in').value || $('out').value)); }
+
+    async function loadDay(){
+      const dt = $('date').value; if (!dt) return;
+      const ds = dt.replace(/-/g,'/');
+      try {
+        const r = await callGas('action=my_attendance&userId='+encodeURIComponent(profile.userId)+'&date='+encodeURIComponent(ds));
+        if (r && r.found) {
+          $('cur').textContent = '現在の記録 … 出勤 '+(r.in||'―')+' / 退勤 '+(r.out||'―')+' / 勤務 '+(r.work||'―');
+          $('cur').classList.remove('hidden');
+          if (r.in && !$('in').dataset.touched) $('in').value = r.in;
+          if (r.out && !$('out').dataset.touched) $('out').value = r.out;
+        } else {
+          $('cur').textContent = 'この日の記録はまだありません（新規に登録されます）。';
+          $('cur').classList.remove('hidden');
+        }
+      } catch(e){}
+      validate();
+    }
+
+    window.onload = async function(){
+      try {
+        if (typeof liff === 'undefined') throw new Error('SDK読み込み失敗');
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) { liff.login(); return; }
+        profile = await liff.getProfile();
+        $('date').value = todayStr();
+        $('date').onchange = function(){ $('in').dataset.touched=''; $('out').dataset.touched=''; $('in').value=''; $('out').value=''; loadDay(); };
+        $('in').oninput = function(){ this.dataset.touched='1'; validate(); };
+        $('out').oninput = function(){ this.dataset.touched='1'; validate(); };
+        $('save').onclick = doSave;
+        await loadDay();
+        $('form').classList.remove('hidden');
+      } catch(e){ $('done').textContent='⚠️ エラー: '+(e.message||e); $('done').classList.remove('hidden'); }
+    };
+
+    async function doSave(){
+      const date = $('date').value.replace(/-/g,'/'), tin=$('in').value, tout=$('out').value, reason=$('reason').value.trim();
+      if (!date || (!tin && !tout)) return;
+      $('save').disabled = true; $('form').classList.add('hidden');
+      $('done').innerHTML = '<span class="spin"></span>申請中…'; $('done').classList.remove('hidden');
+      const params = new URLSearchParams();
+      params.append('contents', JSON.stringify({
+        action:'correction', userId:profile.userId, displayName:profile.displayName,
+        date:date, in:tin, out:tout, reason:reason
+      }));
+      try { await fetch(GAS_URL, { method:'POST', mode:'no-cors', body:params }); } catch(e){}
+      await sleep(1500);
+      $('done').innerHTML = '✅ 申請しました<br><span style="font-size:15px;font-weight:normal;color:#666">'
+        + date + '<br>出勤 '+(tin||'―')+' / 退勤 '+(tout||'―')
+        + '<br>管理者の承認後に反映されます</span>';
+      setTimeout(closeSafe, 2600);
+    }
+
+    function jsonpGet(qs){
+      return new Promise(function(resolve,reject){
+        const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+        const s=document.createElement('script'); let done=false;
+        const timer=setTimeout(function(){ if(!done){ reject(new Error('timeout')); s.remove(); delete window[cb]; } },30000);
+        window[cb]=function(d){ done=true; clearTimeout(timer); resolve(d); delete window[cb]; s.remove(); };
+        s.onerror=function(){ if(!done){ clearTimeout(timer); reject(new Error('jsonp fail')); } s.remove(); };
+        s.src=GAS_URL+'?'+qs+'&callback='+cb; document.head.appendChild(s);
+      });
+    }
+    async function callGas(qs){ return await jsonpGet(qs); }
+  </script>
+</body>
+</html>
