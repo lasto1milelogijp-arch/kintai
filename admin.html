@@ -48,6 +48,8 @@
       <div id="att"></div>
       <h2>承認待ちシフト</h2>
       <div id="shift"></div>
+      <h2>勤怠修正の申請</h2>
+      <div id="corr"></div>
       <h2>今日のアルコールチェック</h2>
       <div id="alc"></div>
       <button class="reload" id="reload">最新に更新</button>
@@ -104,7 +106,7 @@
       }
       $('scope').textContent = '担当範囲：' + (d.scope || '') + (d.manager ? '（' + d.manager + '）' : '');
       renderReq(d.adminRequests || []);
-      curData = { attendance: d.attendance || [], pending: d.pending || [], alcohol: d.alcohol || [] };
+      curData = { attendance: d.attendance || [], pending: d.pending || [], alcohol: d.alcohol || [], corrections: d.corrections || [] };
       buildFilter();
       renderAll();
       $('loading').style.display = 'none';
@@ -162,7 +164,7 @@
 
     function buildFilter() {
       const set = {};
-      ['attendance', 'pending', 'alcohol'].forEach(function (k) {
+      ['attendance', 'pending', 'alcohol', 'corrections'].forEach(function (k) {
         curData[k].forEach(function (r) { if (r.company) set[r.company] = 1; });
       });
       const companies = Object.keys(set).sort();
@@ -185,7 +187,26 @@
     function renderAll() {
       renderAtt(byCompany(curData.attendance));
       renderShift(byCompany(curData.pending));
+      renderCorr(byCompany(curData.corrections));
       renderAlc(byCompany(curData.alcohol));
+    }
+
+    function renderCorr(rows) {
+      if (!rows.length) { $('corr').innerHTML = '<div class="empty">勤怠修正の申請はありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>対象日</th><th>修正内容</th><th>操作</th></tr>';
+      rows.forEach(function (r) {
+        const detail = '出勤 ' + (r.in || '―') + ' / 退勤 ' + (r.out || '―') + (r.reason ? '<div class="dep">理由：' + esc(r.reason) + '</div>' : '');
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td>'
+          + '<td>' + esc(r.date) + '</td><td>' + detail + '</td>'
+          + '<td class="btns"><button class="ap" onclick="decideCorr(' + r.row + ',\'承認\')">承認</button>'
+          + '<button class="rj" onclick="decideCorr(' + r.row + ',\'却下\')">却下</button></td></tr>';
+      });
+      $('corr').innerHTML = h + '</table>';
+    }
+    async function decideCorr(row, decision) {
+      if (!confirm('この修正申請を「' + decision + '」にしますか？' + (decision === '承認' ? '\n（承認すると勤務時間に反映されます）' : ''))) return;
+      await callGas('action=correction_decide&userId=' + encodeURIComponent(profile.userId) + '&row=' + row + '&decision=' + encodeURIComponent(decision));
+      await load();
     }
 
     function renderAtt(rows) {
