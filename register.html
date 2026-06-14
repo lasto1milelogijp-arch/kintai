@@ -85,15 +85,15 @@
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
 
-        const comp = await callGas('action=company_list');
-        const companies = (comp && comp.companies) || [];
+        const page = await callGas('action=register_page&userId=' + encodeURIComponent(profile.userId));
+        const companies = (page && page.companies) || [];
         const csel = $('company');
         companies.forEach(function (c) {
           companyMap[c.name] = { depot: c.depot, depotId: c.depotId };
           const o = document.createElement('option'); o.value = c.name; o.textContent = c.name; csel.appendChild(o);
         });
 
-        const my = await callGas('action=my_depot&userId=' + encodeURIComponent(profile.userId));
+        const my = (page && page.my) || {};
         if (my && my.registered) {
           $('cur').textContent = '現在の登録：' + (my.name || '') + '／' + (my.company || '') + '／' + (my.depotName || '');
           $('cur').classList.remove('hidden');
