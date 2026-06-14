@@ -33,7 +33,7 @@
   <div class="wrap">
     <div id="intro">
       <h1>アルコールチェック</h1>
-      <p class="lead">出勤時・退勤時に検知器の<b>結果画面を撮影</b>してください。<br>これが出勤・退勤の打刻も兼ねます。</p>
+      <p class="lead">検知器の<b>結果画面の写真</b>を送ってください（その場で撮影、または保存済みの写真を選択）。<br>これが出勤・退勤の打刻も兼ねます。</p>
       <button class="btn" id="shootIn">🌅 出勤のチェック</button>
       <button class="btn sub" id="shootOut" style="margin-top:12px">🌙 退勤のチェック</button>
     </div>
@@ -42,11 +42,11 @@
 
     <div id="result" class="hidden">
       <div id="card" class="card"></div>
-      <button class="btn sub" id="again">📷 もう一度撮影</button>
+      <button class="btn sub" id="again">🔄 もう一度（写真を選ぶ）</button>
       <button class="btn sub" id="close">閉じる</button>
     </div>
 
-    <input type="file" id="file" accept="image/*" capture="environment">
+    <input type="file" id="file" accept="image/*">
   </div>
 
   <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
