@@ -1,1220 +1,264 @@
-// ===== 入口（POST）: 打刻 / シフト希望 =====
-function doPost(e) {
-  // 1) LINE Webhook（公式アカウントに写真を送るだけ方式）
-  try {
-    if (e && e.postData && e.postData.type && e.postData.type.indexOf('application/json') === 0) {
-      const body = JSON.parse(e.postData.contents);
-      if (body && body.events) { handleLineWebhook(body.events); return ContentService.createTextOutput('OK'); }
-    }
-  } catch (whErr) { /* Webhookでなければ通常処理へ */ }
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理者画面</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #f7f7f7; color: #222; }
+    .wrap { padding: 16px 14px 40px; max-width: 640px; margin: 0 auto; }
+    h1 { font-size: 18px; margin: 6px 0 2px; }
+    .scope { color: #06934a; font-size: 13px; font-weight: bold; margin: 0 0 10px; }
+    .filterbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 6px; }
+    .chip { border: 1px solid #cfcfcf; background: #fff; color: #555; border-radius: 16px; padding: 6px 14px; font-size: 13px; font-weight: bold; }
+    .chip.on { background: #06c755; border-color: #06c755; color: #fff; }
+    h2 { font-size: 15px; margin: 18px 0 8px; padding-left: 8px; border-left: 4px solid #06c755; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; font-size: 13px; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid #eee; text-align: left; }
+    th { background: #f0f0f0; font-size: 12px; color: #555; }
+    .dep { color: #777; font-size: 11px; }
+    .empty { color: #999; font-size: 13px; padding: 10px 4px; }
+    .badge { padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: bold; color: #fff; white-space: nowrap; }
+    .ok { background: #1f9d55; } .over { background: #d23c3c; } .warn { background: #d9772b; } .err { background: #888; }
+    .btns button { border: none; border-radius: 6px; color: #fff; font-weight: bold; padding: 6px 10px; margin-right: 5px; font-size: 12px; }
+    .ap { background: #1f9d55; } .rj { background: #d23c3c; }
+    #denied { padding: 26px 14px; text-align: center; line-height: 1.7; }
+    #denied .id { user-select: all; background: #eee; padding: 6px 10px; border-radius: 6px; display: inline-block; margin: 8px 0 4px; font-size: 12px; word-break: break-all; }
+    #applyBox { max-width: 420px; margin: 18px auto 0; text-align: left; background: #fff; border: 1px solid #e3e3e3; border-radius: 12px; padding: 16px; }
+    #applyBox label { display: block; font-weight: bold; font-size: 13px; margin: 10px 0 6px; }
+    #applyBox select, #applyBox textarea { width: 100%; box-sizing: border-box; padding: 11px; font-size: 15px; border: 1px solid #ccc; border-radius: 8px; }
+    #applyBox textarea { height: 56px; resize: vertical; }
+    .applybtn { width: 100%; border: none; border-radius: 10px; background: #06c755; color: #fff; font-weight: bold; padding: 14px; font-size: 16px; margin-top: 14px; }
+    .applybtn:disabled { background: #bbb; }
+    #loading { padding: 40px; text-align: center; color: #666; }
+    .reqcard { background: #fff; border: 1px solid #ffd9a8; border-left: 5px solid #e8870c; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; }
+    .reqcard .nm { font-weight: bold; } .reqcard .meta { color: #777; font-size: 12px; margin: 2px 0 8px; }
+    .reload { display:block; margin: 18px auto 0; background:#fff; border:1px solid #ccc; border-radius:8px; padding:10px 16px; font-size:13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="loading">読み込み中…</div>
+    <div id="main" style="display:none">
+      <h1 id="title">管理者画面</h1>
+      <div class="scope" id="scope"></div>
+      <div id="filter" class="filterbar" style="display:none"></div>
+      <div id="reqWrap" style="display:none"><h2>管理者申請</h2><div id="req"></div></div>
+      <h2>今日の出勤状況</h2>
+      <div id="att"></div>
+      <h2>承認待ちシフト</h2>
+      <div id="shift"></div>
+      <h2>勤怠修正の申請</h2>
+      <div id="corr"></div>
+      <h2>今日のアルコールチェック</h2>
+      <div id="alc"></div>
+      <button class="reload" id="reload">最新に更新</button>
+    </div>
+    <div id="denied" style="display:none">
+      <p>この画面を見る権限がありません。<br>管理者として申請するか、下のIDをオーナーに伝えてください。</p>
+      <div class="id" id="yourId"></div>
+      <div id="applyBox">
+        <div style="font-weight:bold;font-size:15px;margin-bottom:4px">管理者として申請する</div>
+        <label for="adepot">担当したい会社</label>
+        <select id="adepot"><option value="">― 選択してください ―</option></select>
+        <label for="anote">ひとこと（任意）</label>
+        <textarea id="anote" placeholder="例：◯◯（会社）の責任者です"></textarea>
+        <button class="applybtn" id="applyBtn" disabled>この内容で申請する</button>
+        <div id="applyMsg" style="text-align:center;margin-top:10px;font-weight:bold"></div>
+      </div>
+    </div>
+  </div>
 
-  // 2) LIFFからの書き込み（ボタン方式）
-  try {
-    const json = JSON.parse(e.parameter.contents);
-    let msg;
-    if (json.action === 'shift_request') msg = addShiftRequest(json);
-    else if (json.action === 'alcohol') msg = recordAlcohol(json);
-    else if (json.action === 'register') msg = registerDriver(json);
-    else if (json.action === 'admin_apply') msg = applyManager(json);
-    else if (json.action === 'correction') msg = addCorrectionRequest(json);
-    else msg = recordTime(json.userId, json.displayName, json.type, json.lat, json.lng);
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: msg }))
-                         .setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: String(err) }))
-                         .setMimeType(ContentService.MimeType.JSON);
-  }
-}
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+  <script>
+    const LIFF_ID = "2010310932-MO7e9yXF";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
 
-// ===== 入口（GET）: 集計 / シフト閲覧 / 管理者データ / シフト承認 =====
-function doGet(e) {
-  const p = e.parameter;
-  let data;
-  if (p.action === 'summary')             data = getMonthlySummary(p.userId, p.month);
-  else if (p.action === 'shift_view')     data = getShifts(p.userId, p.month);
-  else if (p.action === 'shift_page')     data = getShiftPage(p.userId);
-  else if (p.action === 'admin_data')     data = getAdminData(p.userId);
-  else if (p.action === 'shift_decision') data = shiftDecision(p.userId, p.row, p.decision);
-  else if (p.action === 'shift_cancel')   data = shiftCancel(p.userId, p.stamp);
-  else if (p.action === 'config')          data = getConfig();
-  else if (p.action === 'alcohol_result') data = getAlcoholResult(p.userId, p.reqId);
-  else if (p.action === 'base_list')      data = getBaseList();
-  else if (p.action === 'company_list')   data = getCompanyList();
-  else if (p.action === 'register_page')  data = getRegisterPage(p.userId);
-  else if (p.action === 'my_depot')       data = getMyDepot(p.userId);
-  else if (p.action === 'admin_decide')   data = decideAdminRequest(p.userId, p.row, p.decision);
-  else if (p.action === 'my_attendance')  data = getMyAttendance(p.userId, p.date);
-  else if (p.action === 'correction_decide') data = decideCorrection(p.userId, p.row, p.decision);
-  else return ContentService.createTextOutput('OK: データ受け取り専用です');
-  const json = JSON.stringify(data);
-  if (p.callback) return ContentService.createTextOutput(p.callback + '(' + json + ')')
-                       .setMimeType(ContentService.MimeType.JAVASCRIPT);
-  return ContentService.createTextOutput(json).setMimeType(ContentService.MimeType.JSON);
-}
+    let profile = null;
+    let curData = { attendance: [], pending: [], alcohol: [] };
+    let curCompany = ''; // '' = すべて
+    const $ = function (id) { return document.getElementById(id); };
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
 
-// ===== 打刻記録 =====
-function recordTime(userId, userName, type, lat, lng) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const home = (driverDepotMap()[userId] || {}).depot || '';
-    const depot = detectDepot(lat, lng, home);
-    return writeAttendance(userId, userName, type, lat, lng, depot);
-  } finally { lock.releaseLock(); }
-}
-
-// 出退勤を書き込む（ロックは呼び出し側が保持すること）。depot=その日の拠点ID
-function writeAttendance(userId, userName, type, lat, lng, depot) {
-  const tz = 'Asia/Tokyo';
-  const now = new Date();
-  const nm = driverName(userId, userName);
-  const dateStr = Utilities.formatDate(now, tz, 'yyyy/MM/dd');
-  const timeStr = Utilities.formatDate(now, tz, 'HH:mm:ss');
-  const location = (lat && lng) ? lat + ", " + lng : "位置情報なし";
-  const judge = judgeLocation(lat, lng);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const disp = sheet.getDataRange().getDisplayValues();
-  let rowIndex = -1;
-  for (let i = 1; i < disp.length; i++) {
-    if (disp[i][0] === userId && normDate(disp[i][2]) === dateStr) { rowIndex = i + 1; break; }
-  }
-  if (type === '出勤') {
-    if (rowIndex !== -1) { sheet.getRange(rowIndex, 4).setValue(timeStr); sheet.getRange(rowIndex, 6).setValue(location); }
-    else { sheet.appendRow([userId, nm, dateStr, timeStr, '', location, '']); rowIndex = sheet.getLastRow(); }
-  } else {
-    if (rowIndex === -1) { sheet.appendRow([userId, nm, dateStr, '', timeStr, location, '']); rowIndex = sheet.getLastRow(); }
-    else { sheet.getRange(rowIndex, 5).setValue(timeStr); sheet.getRange(rowIndex, 6).setValue(location); }
-    sheet.getRange(rowIndex, 7).setFormula("=E" + rowIndex + "-D" + rowIndex);
-    sheet.getRange(rowIndex, 7).setNumberFormat('[h]:mm:ss');
-  }
-  if (judge) sheet.getRange(rowIndex, 8).setValue(judge); // H列=判定
-  if (depot) sheet.getRange(rowIndex, 9).setValue(depot); // I列=拠点（その日）
-  return type + "を記録しました";
-}
-
-// 位置情報から「その日の拠点」を判定（範囲内の最寄り→なければ所属拠点）
-function detectDepot(lat, lng, homeId) {
-  if (lat && lng) {
-    const bases = readBases().filter(function (b) { return b.lat != null && b.lng != null; });
-    let best = null, bestD = Infinity;
-    for (let i = 0; i < bases.length; i++) {
-      const d = distM(bases[i].lat, bases[i].lng, Number(lat), Number(lng));
-      if (d < bestD) { bestD = d; best = bases[i]; }
-    }
-    if (best && bestD <= best.radius) return best.id;
-  }
-  return homeId || '';
-}
-
-
-// ===== 月間勤務時間 =====
-function getMonthlySummary(userId, month) {
-  const tz = 'Asia/Tokyo';
-  const now = new Date();
-  const ym = normMonth(month || Utilities.formatDate(now, tz, 'yyyy/MM'));
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const disp = sheet.getDataRange().getDisplayValues();
-  const byDate = {}; let name = driverName(userId, '');
-  for (let i = 1; i < disp.length; i++) {
-    if (disp[i][0] !== userId) continue;
-    const d = normDate(disp[i][2]);
-    if (!name) name = disp[i][1] || name;
-    byDate[d] = { in: disp[i][3], out: disp[i][4], work: disp[i][6] };
-  }
-  // 当月：日別＋合計
-  const rows = []; let totalSec = 0;
-  Object.keys(byDate).sort().forEach(function (d) {
-    if (d.slice(0, 7) === ym) {
-      totalSec += hmsToSec(byDate[d].work);
-      rows.push({ date: d, in: byDate[d].in, out: byDate[d].out, work: byDate[d].work });
-    }
-  });
-  // 直近1週間（今日を含む7日間）
-  const WD = ['日', '月', '火', '水', '木', '金', '土'];
-  const week = []; let weekSec = 0;
-  for (let k = 6; k >= 0; k--) {
-    const dt = new Date(now.getTime()); dt.setDate(dt.getDate() - k);
-    const ds = Utilities.formatDate(dt, tz, 'yyyy/MM/dd');
-    const rec = byDate[ds];
-    const w = rec ? rec.work : '';
-    weekSec += hmsToSec(w);
-    week.push({ date: ds, wday: WD[dt.getDay()], in: rec ? rec.in : '', out: rec ? rec.out : '', work: w, today: (k === 0) });
-  }
-  return {
-    status: 'ok', name: name, month: ym, days: rows.length,
-    totalText: secToHM(totalSec), rows: rows,
-    week: week, weekTotalText: secToHM(weekSec)
-  };
-}
-
-// ===== シフトシート作成（1回だけ実行）=====
-function setupShiftSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('シフト');
-  if (!sh) sh = ss.insertSheet('シフト', ss.getNumSheets());
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 8).setValues([['タイムスタンプ', 'ID', '氏名', '日付', '開始', '終了', 'ステータス', '備考']]);
-    sh.setFrozenRows(1);
-    const rule = SpreadsheetApp.newDataValidation().requireValueInList(['申請中', '確定', '却下'], true).build();
-    sh.getRange(2, 7, 2000, 1).setDataValidation(rule);
-    sh.setColumnWidth(1, 160);
-  }
-  return 'シフトシートを作成しました';
-}
-
-// ===== シフト希望登録 =====
-function addShiftRequest(json) {
-  // シフト申請は内勤（倉庫・システム）のみ。ドライバーは不可
-  const role = (driverDepotMap()[json.userId] || {}).role || '';
-  if (role !== '内勤') return 'シフト申請は内勤（倉庫・システム）の方のみご利用いただけます';
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sh = ss.getSheetByName('シフト');
-    if (!sh) { setupShiftSheet(); sh = ss.getSheetByName('シフト'); }
-    const stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    sh.appendRow([stamp, json.userId, json.displayName, normDate(json.date), json.start, json.end, '申請中', json.note || '']);
-    return '希望を送信しました';
-  } finally { lock.releaseLock(); }
-}
-
-// ===== シフト画面用：区分とシフト一覧を1回で返す（往復を減らす）=====
-function getShiftPage(userId) {
-  const role = (driverDepotMap()[userId] || {}).role || 'ドライバー';
-  if (role !== '内勤') return { status: 'ok', role: role, rows: [] };
-  const s = getShifts(userId);
-  return { status: 'ok', role: role, month: s.month, name: s.name, rows: s.rows };
-}
-
-// ===== シフト閲覧（ドライバー本人）=====
-function getShifts(userId, month) {
-  const tz = 'Asia/Tokyo';
-  const ym = normMonth(month || Utilities.formatDate(new Date(), tz, 'yyyy/MM'));
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('シフト');
-  if (!sh) return { status: 'ok', month: ym, name: '', rows: [] };
-  const disp = sh.getDataRange().getDisplayValues();
-  const rows = []; let name = '';
-  for (let i = 1; i < disp.length; i++) {
-    if (disp[i][1] !== userId) continue;
-    const d = normDate(disp[i][3]);
-    if (d.slice(0, 7) !== ym) continue;
-    name = disp[i][2] || name;
-    rows.push({ stamp: disp[i][0], date: d, start: disp[i][4], end: disp[i][5], status: disp[i][6] || '申請中', note: disp[i][7] || '' });
-  }
-  rows.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.start < b.start ? -1 : 1); });
-  return { status: 'ok', month: ym, name: name, rows: rows };
-}
-
-// ===== 管理者シート作成（1回だけ実行）=====
-// 権限列: 空欄/全社/ALL → 全拠点 ／ ネットワーク名(国際,GMT…) → そのNW全拠点 ／ 拠点ID(カンマ区切り) → その拠点
-function setupAdminSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('管理者');
-  if (!sh) sh = ss.insertSheet('管理者', ss.getNumSheets());
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 4).setValues([['LINE_ID', '氏名', '権限', '備考']]);
-    sh.setFrozenRows(1); sh.setColumnWidth(1, 270);
-  }
-  return '管理者シートを作成しました。A列にLINE ID、C列に権限（全社／ネットワーク名／拠点ID）を入れてください';
-}
-
-// 管理者の担当範囲を返す（null=管理者でない）
-function managerScope(userId) {
-  if (!userId) return null;
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('管理者');
-  if (!sh || sh.getLastRow() < 2) return null;
-  const v = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getDisplayValues();
-  let row = null;
-  for (let i = 0; i < v.length; i++) {
-    if (String(v[i][0]).trim() === String(userId).trim()) { row = v[i]; break; }
-  }
-  if (!row) return null;
-  const perm = String(row[2] || '').trim();
-  if (perm === '' || perm === '全社' || perm.toUpperCase() === 'ALL')
-    return { name: row[1], all: true, depots: {}, companies: {}, label: '全社' };
-  // 権限トークン: 拠点ID → その拠点／会社名 → その会社（拠点をまたいで担当）
-  const baseIds = {}; readBases().forEach(function (b) { baseIds[b.id] = b.name; });
-  const compSet = {}; readCompanies().forEach(function (c) { compSet[c.name] = 1; });
-  const depots = {}, companies = {}, labels = [];
-  perm.split(/[,、\s]+/).forEach(function (tok) {
-    tok = tok.trim(); if (!tok) return;
-    if (baseIds[tok]) { depots[tok] = 1; labels.push(baseIds[tok]); }
-    else if (compSet[tok]) { companies[tok] = 1; labels.push(tok + '（全拠点）'); }
-    else { depots[tok] = 1; labels.push(tok); } // 不明トークンは拠点ID扱い
-  });
-  return { name: row[1], all: false, depots: depots, companies: companies, label: labels.join('・') };
-}
-function isAdmin(userId) { return managerScope(userId) !== null; }
-
-// 各管理者の「見える範囲」を一覧表示（実行ログで確認用）
-// 全社＝すべて見える／会社名＝その会社だけ／拠点名＝その拠点だけ
-function listManagerScopes() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('管理者');
-  if (!sh || sh.getLastRow() < 2) return '管理者シートに登録がありません';
-  const v = sh.getRange(2, 1, sh.getLastRow() - 1, 4).getDisplayValues();
-  const lines = v.map(function (r) {
-    const sc = managerScope(String(r[0]).trim());
-    const range = sc ? (sc.all ? '全社（すべて見える）' : sc.label) : '―';
-    const c = String(r[2] || '').trim();
-    return '・' + (r[1] || '(名前なし)') + '  →  ' + range + '   〔C列="' + (c || '空欄=全社'). replace('空欄=全社', '空欄→全社') + '"〕';
-  });
-  const out = '【管理者と見える範囲】\n' + lines.join('\n');
-  Logger.log(out);
-  return out;
-}
-
-// ===== 管理者データ（担当拠点のみ：今日の出勤＋承認待ちシフト＋今日のアルコール）=====
-function getAdminData(adminId) {
-  const _t0 = Date.now();
-  const scope = managerScope(adminId);
-  if (!scope) return { status: 'denied', yourId: adminId };
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const tz = 'Asia/Tokyo';
-  const today = Utilities.formatDate(new Date(), tz, 'yyyy/MM/dd');
-  const dmap = driverDepotMap();
-  const bname = {}; readBases().forEach(function (b) { bname[b.id] = b.name; });
-  const _tMaps = Date.now();
-  function depotOf(uid) { const d = dmap[uid]; return d ? d.depot : ''; }
-  function companyOf(uid) { const d = dmap[uid]; return d ? d.company : ''; }
-  function allow(depot, company) { return scope.all || (depot && scope.depots[depot]) || (company && scope.companies[company]); }
-  function label(depot) { return bname[depot] || depot || '未登録'; }
-
-  // 承認待ちシフト（シフト: B=userId）
-  const pending = [];
-  const shiftSh = ss.getSheetByName('シフト');
-  if (shiftSh) {
-    const d = shiftSh.getDataRange().getDisplayValues();
-    for (let i = 1; i < d.length; i++) {
-      if ((d[i][6] || '') !== '申請中') continue;
-      const uid = d[i][1], dep = depotOf(uid), comp = companyOf(uid);
-      if (!allow(dep, comp)) continue;
-      pending.push({ row: i + 1, name: d[i][2], depot: label(dep), company: comp, date: normDate(d[i][3]), start: d[i][4], end: d[i][5], note: d[i][7] || '' });
-    }
-    pending.sort(function (a, b) { return a.date < b.date ? -1 : a.date > b.date ? 1 : (a.start < b.start ? -1 : 1); });
-  }
-  const _tShift = Date.now();
-
-  // 今日の出勤（出退勤: 0=userId,1=氏名,2=日付,3=出,4=退,6=勤務,8=拠点）
-  const attendance = [];
-  const ad = ss.getSheets()[0].getDataRange().getDisplayValues();
-  for (let i = 1; i < ad.length; i++) {
-    if (normDate(ad[i][2]) !== today) continue;
-    const uid = ad[i][0], dep = ad[i][8] || depotOf(uid), comp = companyOf(uid);
-    if (!allow(dep, comp)) continue;
-    attendance.push({ name: ad[i][1], depot: label(dep), company: comp, in: ad[i][3], out: ad[i][4], work: ad[i][6] });
-  }
-  attendance.sort(function (a, b) { return a.depot < b.depot ? -1 : a.depot > b.depot ? 1 : 0; });
-  const _tAtt = Date.now();
-
-  // 今日のアルコール（9=LINE_ID,2=氏名,4=時間,5=結果,6=判定,10=区分,11=拠点,0=受信日時）
-  const alcohol = [];
-  const alSh = ss.getSheetByName('アルコール');
-  if (alSh && alSh.getLastRow() > 1) {
-    const a = alSh.getDataRange().getDisplayValues();
-    for (let i = 1; i < a.length; i++) {
-      if (String(a[i][0]).slice(0, 10).replace(/-/g, '/') !== today) continue;
-      const uid = a[i][9] || '';
-      const dep = a[i][11] || depotOf(uid), comp = companyOf(uid);
-      if (uid && !allow(dep, comp)) continue; // userId不明の旧データは全社のみ
-      if (!uid && !scope.all) continue;
-      alcohol.push({ name: a[i][2], depot: label(dep), company: comp, type: a[i][10] || '', time: a[i][4], value: a[i][5], judge: a[i][6] });
-    }
-  }
-  const _tAlc = Date.now();
-  console.log('getAdminData 合計' + (_tAlc - _t0) + 'ms | scope/maps=' + (_tMaps - _t0)
-    + ' shift=' + (_tShift - _tMaps) + ' 出退勤=' + (_tAtt - _tShift) + ' alcohol=' + (_tAlc - _tAtt)
-    + ' | 件数 att=' + attendance.length + ' shift=' + pending.length + ' alc=' + alcohol.length);
-
-  return { status: 'ok', today: today, manager: scope.name || '', scope: scope.label, pending: pending, attendance: attendance, alcohol: alcohol, corrections: pendingCorrections(scope), adminRequests: scope.all ? pendingAdminRequests() : [] };
-}
-
-// ===== 管理者申請（申請→通知→承認）=====
-function setupAdminRequestSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('管理者申請');
-  if (!sh) sh = ss.insertSheet('管理者申請', ss.getNumSheets());
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 7).setValues([['申請日時', 'LINE_ID', '氏名', '希望拠点ID', '希望拠点名', '備考', '状態']]);
-    sh.setFrozenRows(1); sh.setColumnWidth(2, 260);
-    const rule = SpreadsheetApp.newDataValidation().requireValueInList(['申請中', '承認済', '却下'], true).build();
-    sh.getRange(2, 7, 3000, 1).setDataValidation(rule);
-  }
-  return '管理者申請シートを作成しました';
-}
-
-// 申請を受け付けてオーナーに通知（会社ごと／全社）
-function applyManager(json) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sh = ss.getSheetByName('管理者申請');
-    if (!sh) { setupAdminRequestSheet(); sh = ss.getSheetByName('管理者申請'); }
-    const stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    // 互換: json.company（会社名 or '全社'）。古いdepot指定が来た場合も会社名として扱う
-    const company = String(json.company || json.depot || '').trim();
-    const label = (company === '全社' || company === '') ? '全社（すべての会社）' : company;
-    // D列＝承認時に権限C列へ書く値（会社名 or 全社）／E列＝表示用ラベル
-    sh.appendRow([stamp, json.userId, json.displayName || '', company || '全社', label, json.note || '', '申請中']);
-    notifyOwners('【管理者申請が届きました】\n申請者：' + (json.displayName || '') + '\n担当希望：' + label
-      + (json.note ? '\n備考：' + json.note : '') + '\n\n管理者画面の「管理者申請」から承認/却下できます。');
-    return '管理者申請を送信しました';
-  } finally { lock.releaseLock(); }
-}
-
-// オーナー用：申請中の一覧
-function pendingAdminRequests() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('管理者申請');
-  const out = [];
-  if (!sh || sh.getLastRow() < 2) return out;
-  const v = sh.getDataRange().getDisplayValues();
-  for (let i = 1; i < v.length; i++) {
-    if ((v[i][6] || '') !== '申請中') continue;
-    out.push({ row: i + 1, stamp: v[i][0], name: v[i][2], depotId: v[i][3], depot: v[i][4], note: v[i][5] });
-  }
-  return out;
-}
-
-// オーナー用：承認/却下
-function decideAdminRequest(adminId, row, decision) {
-  const scope = managerScope(adminId);
-  if (!scope || !scope.all) return { status: 'denied' };
-  if (decision !== '承認' && decision !== '却下') return { status: 'error', message: '不正な操作' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sh = ss.getSheetByName('管理者申請');
-    if (!sh) return { status: 'error', message: '申請シートなし' };
-    const r = Number(row);
-    const rv = sh.getRange(r, 1, 1, 7).getDisplayValues()[0];
-    const applicantId = rv[1], name = rv[2], depotId = rv[3], depotName = rv[4];
-    if (decision === '承認') {
-      let adm = ss.getSheetByName('管理者');
-      if (!adm) { setupAdminSheet(); adm = ss.getSheetByName('管理者'); }
-      const ex = adm.getDataRange().getDisplayValues();
-      let found = false;
-      for (let i = 1; i < ex.length; i++) {
-        if (String(ex[i][0]).trim() === String(applicantId).trim()) { adm.getRange(i + 1, 3).setValue(depotId); found = true; break; }
+    window.onload = async function () {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) { liff.login(); return; }
+        profile = await liff.getProfile();
+        $('reload').onclick = load;
+        await load();
+      } catch (e) {
+        $('loading').textContent = '⚠️ エラー: ' + (e.message || e);
       }
-      if (!found) adm.appendRow([applicantId, name, depotId, '申請承認 ' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd')]);
-      sh.getRange(r, 7).setValue('承認済');
-      try { linkRoleMenu_(applicantId); } catch (e) {}
-      linePush(applicantId, '✅ 管理者申請が承認されました（担当：' + depotName + '）。\n管理者画面が使えます。');
-    } else {
-      sh.getRange(r, 7).setValue('却下');
-      linePush(applicantId, '管理者申請は今回は見送りとなりました。ご不明点は管理者へご連絡ください。');
-    }
-    return { status: 'ok' };
-  } finally { lock.releaseLock(); }
-}
+    };
 
-// ===== LINEプッシュ通知 =====
-function linePush(to, text) {
-  const token = prop('LINE_TOKEN');
-  if (!token || !to) return false;
-  try {
-    UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
-      method: 'post', contentType: 'application/json',
-      headers: { Authorization: 'Bearer ' + token },
-      payload: JSON.stringify({ to: String(to), messages: [{ type: 'text', text: text }] }),
-      muteHttpExceptions: true
-    });
-    return true;
-  } catch (e) { return false; }
-}
-function notifyOwners(text) {
-  const ids = String(prop('OWNER_IDS') || '').split(/[,、\s]+/).filter(function (x) { return x; });
-  ids.forEach(function (id) { linePush(id, text); });
-}
-
-// ===== 役割別リッチメニュー（ドライバー／内勤を自動で出し分け）=====
-// 画像はGitHub Pagesに置く: menu_driver.png（2500x843） / menu_staff.png（2500x1686）
-var MENU_IMG_BASE = 'https://lasto1milelogijp-arch.github.io/kintai/';
-var LIFF_URL = 'https://liff.line.me/2010310932-MO7e9yXF';
-
-function _lineFetch_(method, url, payload, contentType) {
-  const token = prop('LINE_TOKEN');
-  const opt = { method: method, headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true };
-  if (contentType) opt.contentType = contentType;
-  if (payload != null) opt.payload = (contentType === 'application/json') ? JSON.stringify(payload) : payload;
-  return UrlFetchApp.fetch(url, opt);
-}
-function createRichMenu_(def, imageUrl) {
-  const res = _lineFetch_('post', 'https://api.line.me/v2/bot/richmenu', def, 'application/json');
-  const body = res.getContentText();
-  const id = JSON.parse(body).richMenuId;
-  if (!id) throw new Error('richmenu作成失敗: ' + body);
-  const blob = UrlFetchApp.fetch(imageUrl, { muteHttpExceptions: true }).getBlob();
-  const up = _lineFetch_('post', 'https://api-data.line.me/v2/bot/richmenu/' + id + '/content', blob.getBytes(), 'image/png');
-  if (up.getResponseCode() !== 200) throw new Error('画像アップロード失敗(' + up.getResponseCode() + '): ' + up.getContentText());
-  return id;
-}
-// 1回だけ実行：4つのメニューを作成し、IDを保存。既定はドライバー用に設定
-function setupRoleRichMenus() {
-  if (!prop('LINE_TOKEN')) return 'LINE_TOKENが未設定です';
-  try { deleteRoleRichMenus(); } catch (e) {}
-  const uri = function (p) { return { type: 'uri', uri: LIFF_URL + p }; };
-  // ドライバー（3列・2500x843）勤務時間／修正／登録
-  const driver = { size: { width: 2500, height: 843 }, selected: false, name: 'driver_menu', chatBarText: 'メニュー',
-    areas: [
-      { bounds: { x: 0, y: 0, width: 833, height: 843 }, action: uri('/summary.html') },
-      { bounds: { x: 833, y: 0, width: 834, height: 843 }, action: uri('/correction.html') },
-      { bounds: { x: 1667, y: 0, width: 833, height: 843 }, action: uri('/register.html') }
-    ] };
-  // ドライバー＋管理者（4列・2500x843）勤務時間／修正／登録／管理者画面
-  const driverAdmin = { size: { width: 2500, height: 843 }, selected: false, name: 'driver_admin_menu', chatBarText: 'メニュー',
-    areas: [
-      { bounds: { x: 0, y: 0, width: 625, height: 843 }, action: uri('/summary.html') },
-      { bounds: { x: 625, y: 0, width: 625, height: 843 }, action: uri('/correction.html') },
-      { bounds: { x: 1250, y: 0, width: 625, height: 843 }, action: uri('/register.html') },
-      { bounds: { x: 1875, y: 0, width: 625, height: 843 }, action: uri('/admin.html') }
-    ] };
-  // 内勤（3x2・2500x1686）
-  const staffAreas = function (sixth) {
-    return [
-      { bounds: { x: 0, y: 0, width: 833, height: 843 }, action: uri('?type=in') },
-      { bounds: { x: 833, y: 0, width: 834, height: 843 }, action: uri('?type=out') },
-      { bounds: { x: 1667, y: 0, width: 833, height: 843 }, action: uri('/shift.html') },
-      { bounds: { x: 0, y: 843, width: 833, height: 843 }, action: uri('/summary.html') },
-      { bounds: { x: 833, y: 843, width: 834, height: 843 }, action: uri('/correction.html') },
-      { bounds: { x: 1667, y: 843, width: 833, height: 843 }, action: sixth }
-    ];
-  };
-  const staff = { size: { width: 2500, height: 1686 }, selected: false, name: 'staff_menu', chatBarText: 'メニュー', areas: staffAreas(uri('/register.html')) };
-  const staffAdmin = { size: { width: 2500, height: 1686 }, selected: false, name: 'staff_admin_menu', chatBarText: 'メニュー', areas: staffAreas(uri('/admin.html')) };
-
-  const sp = PropertiesService.getScriptProperties();
-  sp.setProperty('RM_DRIVER', createRichMenu_(driver, MENU_IMG_BASE + 'menu_driver.png'));
-  sp.setProperty('RM_DRIVER_ADMIN', createRichMenu_(driverAdmin, MENU_IMG_BASE + 'menu_driver_admin.png'));
-  sp.setProperty('RM_STAFF', createRichMenu_(staff, MENU_IMG_BASE + 'menu_staff.png'));
-  sp.setProperty('RM_STAFF_ADMIN', createRichMenu_(staffAdmin, MENU_IMG_BASE + 'menu_staff_admin.png'));
-  _lineFetch_('post', 'https://api.line.me/v2/bot/user/all/richmenu/' + sp.getProperty('RM_DRIVER'), null, null);
-  return 'メニュー4種を作成しました。続けて assignAllRoleMenus を実行してください';
-}
-// 既存の役割メニューを削除（作り直し用）
-function deleteRoleRichMenus() {
-  const res = _lineFetch_('get', 'https://api.line.me/v2/bot/richmenu/list', null, null);
-  const list = (JSON.parse(res.getContentText()).richmenus) || [];
-  const names = { driver_menu: 1, driver_admin_menu: 1, staff_menu: 1, staff_admin_menu: 1 };
-  list.forEach(function (m) { if (names[m.name]) _lineFetch_('delete', 'https://api.line.me/v2/bot/richmenu/' + m.richMenuId, null, null); });
-  return '削除しました';
-}
-// その人に出すメニューID（管理者かどうか × 区分）
-function menuIdForUser_(userId) {
-  const admin = isAdmin(userId);
-  const role = (driverDepotMap()[userId] || {}).role || 'ドライバー';
-  if (role === '内勤') return admin ? prop('RM_STAFF_ADMIN') : prop('RM_STAFF');
-  return admin ? prop('RM_DRIVER_ADMIN') : prop('RM_DRIVER');
-}
-// 1人にメニューを割り当て
-function linkRoleMenu_(userId) {
-  if (!userId) return;
-  const id = menuIdForUser_(userId);
-  if (id) _lineFetch_('post', 'https://api.line.me/v2/bot/user/' + userId + '/richmenu/' + id, null, null);
-}
-// 既存の登録者＋管理者すべてに、メニューを割り当て（1回実行）
-function assignAllRoleMenus() {
-  if (!prop('RM_DRIVER')) return 'まず setupRoleRichMenus を実行してください';
-  const ids = {};
-  Object.keys(driverDepotMap()).forEach(function (uid) { ids[uid] = 1; });
-  const ash = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('管理者');
-  if (ash && ash.getLastRow() >= 2) {
-    ash.getRange(2, 1, ash.getLastRow() - 1, 1).getDisplayValues().forEach(function (r) { if (String(r[0]).trim()) ids[String(r[0]).trim()] = 1; });
-  }
-  let n = 0; Object.keys(ids).forEach(function (uid) { try { linkRoleMenu_(uid); n++; } catch (e) {} });
-  return n + '人にメニューを割り当てました';
-}
-
-// ===== 退勤打刻忘れリマインダー（時間トリガーで毎晩実行）=====
-// GASエディタ → トリガー → remindUnclosed を「日付ベースのタイマー」で例:21時台に設定
-function remindUnclosed() {
-  const token = prop('LINE_TOKEN'); if (!token) { console.log('LINE_TOKEN未設定'); return 0; }
-  const tz = 'Asia/Tokyo';
-  const today = Utilities.formatDate(new Date(), tz, 'yyyy/MM/dd');
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const disp = sheet.getDataRange().getDisplayValues();
-  let count = 0;
-  for (let i = 1; i < disp.length; i++) {
-    if (normDate(disp[i][2]) !== today) continue;
-    const inT = String(disp[i][3]).trim(), outT = String(disp[i][4]).trim();
-    if (inT && !outT) {
-      const uid = disp[i][0], name = disp[i][1] || '';
-      if (uid) {
-        linePush(uid, '【退勤打刻のお願い】\n' + name + 'さん、本日の退勤打刻がまだのようです。\n'
-          + '・ドライバーの方：退勤の写真をこのトークに送ってください\n'
-          + '・その他の方：メニュー「退勤」を押してください\n'
-          + '※打ち忘れた場合は「修正」と送ると修正申請ができます');
-        count++;
+    async function load() {
+      $('loading').style.display = 'block';
+      $('main').style.display = 'none';
+      $('denied').style.display = 'none';
+      const d = await callGas('action=admin_data&userId=' + encodeURIComponent(profile.userId));
+      if (!d || d.status !== 'ok') {
+        $('yourId').textContent = (d && d.yourId) || profile.userId;
+        await setupApply();
+        $('loading').style.display = 'none';
+        $('denied').style.display = 'block';
+        return;
       }
+      $('scope').textContent = '担当範囲：' + (d.scope || '') + (d.manager ? '（' + d.manager + '）' : '');
+      renderReq(d.adminRequests || []);
+      curData = { attendance: d.attendance || [], pending: d.pending || [], alcohol: d.alcohol || [], corrections: d.corrections || [] };
+      buildFilter();
+      renderAll();
+      $('loading').style.display = 'none';
+      $('main').style.display = 'block';
     }
-  }
-  console.log('退勤リマインド送信: ' + count + '件');
-  return count;
-}
 
-// ===== 勤怠修正申請 =====
-function setupCorrectionSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('修正申請');
-  if (!sh) sh = ss.insertSheet('修正申請', ss.getNumSheets());
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 8).setValues([['申請日時', 'LINE_ID', '氏名', '対象日', '出勤(希望)', '退勤(希望)', '理由', '状態']]);
-    sh.setFrozenRows(1); sh.setColumnWidth(1, 150); sh.setColumnWidth(2, 250);
-  }
-  return '修正申請シートを作成しました';
-}
-function addCorrectionRequest(json) {
-  if (!String(json.reason || '').trim()) return '理由を入力してください';
-  const lock = LockService.getScriptLock(); lock.waitLock(20000);
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sh = ss.getSheetByName('修正申請');
-    if (!sh) { setupCorrectionSheet(); sh = ss.getSheetByName('修正申請'); }
-    const stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    const name = driverName(json.userId, json.displayName || '');
-    sh.appendRow([stamp, json.userId, name, normDate(json.date), json.in || '', json.out || '', json.reason || '', '申請中']);
-    // 担当管理者へ通知（オーナーには必ず、拠点管理者にも）
-    try {
-      const dep = (driverDepotMap()[json.userId] || {}).depot || '';
-      notifyManagersForDepot(dep, '【勤怠修正の申請】' + name + 'さん\n対象日: ' + normDate(json.date)
-        + '\n出勤: ' + (json.in || '―') + ' / 退勤: ' + (json.out || '―')
-        + '\n理由: ' + (json.reason || '―') + '\n管理画面で承認してください。');
-    } catch (e) {}
-    return '修正申請を送信しました';
-  } finally { lock.releaseLock(); }
-}
-// 指定拠点の管理者＋オーナーへ通知
-function notifyManagersForDepot(depot, text) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('管理者');
-  const sent = {};
-  if (sh && sh.getLastRow() >= 2) {
-    const v = sh.getRange(2, 1, sh.getLastRow() - 1, 3).getDisplayValues();
-    v.forEach(function (r) {
-      const id = String(r[0]).trim(), tok = String(r[2] || '').trim();
-      if (!id) return;
-      const all = (tok === '' || tok.indexOf('全社') >= 0);
-      if (all || (depot && tok.indexOf(depot) >= 0)) { if (!sent[id]) { linePush(id, text); sent[id] = 1; } }
-    });
-  }
-  String(prop('OWNER_IDS') || '').split(/[,、\s]+/).filter(function (x) { return x; })
-    .forEach(function (id) { if (!sent[id]) { linePush(id, text); sent[id] = 1; } });
-}
-// 承認待ち修正申請（管理者スコープで絞り込み）
-function pendingCorrections(scope) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('修正申請');
-  const out = [];
-  if (!sh || sh.getLastRow() < 2) return out;
-  const dmap = driverDepotMap();
-  const bname = {}; readBases().forEach(function (b) { bname[b.id] = b.name; });
-  const v = sh.getDataRange().getDisplayValues();
-  for (let i = 1; i < v.length; i++) {
-    if ((v[i][7] || '') !== '申請中') continue;
-    const uid = v[i][1], dm = dmap[uid] || {};
-    const dep = dm.depot || '', comp = dm.company || '';
-    if (!(scope.all || (dep && scope.depots[dep]) || (comp && scope.companies[comp]))) continue;
-    out.push({ row: i + 1, name: v[i][2], date: normDate(v[i][3]), in: v[i][4], out: v[i][5], reason: v[i][6], depot: (bname[dep] || dep || ''), company: comp });
-  }
-  return out;
-}
-// 修正申請の承認/却下
-function decideCorrection(adminId, row, decision) {
-  const scope = managerScope(adminId);
-  if (!scope) return { status: 'denied' };
-  if (decision !== '承認' && decision !== '却下') return { status: 'error', message: '不正な操作' };
-  const lock = LockService.getScriptLock(); lock.waitLock(20000);
-  try {
-    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('修正申請');
-    if (!sh) return { status: 'error', message: '修正申請シートなし' };
-    const r = Number(row);
-    const v = sh.getRange(r, 1, 1, 8).getDisplayValues()[0];
-    const uid = v[1], name = v[2], date = normDate(v[3]), inT = v[4], outT = v[5];
-    if (!scope.all) {
-      const dep = (driverDepotMap()[uid] || {}).depot || '';
-      if (!scope.depots[dep]) return { status: 'denied', message: '担当外の拠点です' };
+    let applyLoaded = false;
+    async function setupApply() {
+      if (applyLoaded) return; applyLoaded = true;
+      try {
+        const list = await callGas('action=company_list');
+        const companies = (list && list.companies) || [];
+        const sel = $('adepot');
+        const oAll = document.createElement('option'); oAll.value = '全社'; oAll.textContent = '全社（すべての会社）'; sel.appendChild(oAll);
+        const seen = {};
+        companies.forEach(function (c) {
+          if (seen[c.name]) return; seen[c.name] = 1;
+          const o = document.createElement('option'); o.value = c.name;
+          o.textContent = c.name + (c.depot ? '（' + c.depot + '）' : ''); sel.appendChild(o);
+        });
+        sel.onchange = function () { $('applyBtn').disabled = !sel.value; };
+      } catch (e) {}
+      $('applyBtn').onclick = submitApply;
     }
-    sh.getRange(r, 8).setValue(decision);
-    if (decision === '承認') applyCorrectionToAttendance(uid, name, date, inT, outT);
-    try { linePush(uid, '【勤怠修正】' + date + ' の申請が「' + decision + '」になりました。'); } catch (e) {}
-    return { status: 'ok', row: row, decision: decision };
-  } finally { lock.releaseLock(); }
-}
-// 承認時：出退勤シートへ反映（既存日は更新／無ければ追加）。勤務時間は再計算
-function applyCorrectionToAttendance(userId, name, date, inT, outT) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
-  const disp = sheet.getDataRange().getDisplayValues();
-  const depot = (driverDepotMap()[userId] || {}).depot || '';
-  let rowIndex = -1;
-  for (let i = 1; i < disp.length; i++) {
-    if (disp[i][0] === userId && normDate(disp[i][2]) === date) { rowIndex = i + 1; break; }
-  }
-  if (rowIndex === -1) {
-    sheet.appendRow([userId, name, date, inT || '', outT || '', '修正', '', '', depot]);
-    rowIndex = sheet.getLastRow();
-  } else {
-    if (inT) sheet.getRange(rowIndex, 4).setValue(inT);
-    if (outT) sheet.getRange(rowIndex, 5).setValue(outT);
-  }
-  // 勤務時間（G列）= 退勤 - 出勤
-  const dV = sheet.getRange(rowIndex, 4).getDisplayValue(), eV = sheet.getRange(rowIndex, 5).getDisplayValue();
-  if (dV && eV) {
-    sheet.getRange(rowIndex, 7).setFormula('=E' + rowIndex + '-D' + rowIndex);
-    sheet.getRange(rowIndex, 7).setNumberFormat('[h]:mm:ss');
-  }
-  return true;
-}
-// 本人の指定日の打刻を返す（修正フォームの初期表示用）
-function getMyAttendance(userId, date) {
-  const tz = 'Asia/Tokyo';
-  const d = normDate(date || Utilities.formatDate(new Date(), tz, 'yyyy/MM/dd'));
-  const disp = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getDisplayValues();
-  for (let i = 1; i < disp.length; i++) {
-    if (disp[i][0] === userId && normDate(disp[i][2]) === d) {
-      return { status: 'ok', found: true, date: d, in: disp[i][3] || '', out: disp[i][4] || '', work: disp[i][6] || '' };
+    async function submitApply() {
+      const company = $('adepot').value; if (!company) return;
+      $('applyBtn').disabled = true;
+      $('applyMsg').textContent = '送信中…';
+      const params = new URLSearchParams();
+      params.append('contents', JSON.stringify({
+        action: 'admin_apply', userId: profile.userId, displayName: profile.displayName, company: company, note: $('anote').value || ''
+      }));
+      try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
+      $('applyMsg').textContent = '✅ 申請しました。承認されると通知が届きます。';
     }
-  }
-  return { status: 'ok', found: false, date: d, in: '', out: '' };
-}
 
-// ===== シフト承認/却下 =====
-function shiftDecision(adminId, row, decision) {
-  const scope = managerScope(adminId);
-  if (!scope) return { status: 'denied' };
-  if (decision !== '確定' && decision !== '却下') return { status: 'error', message: '不正な操作' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('シフト');
-    if (!sh) return { status: 'error', message: 'シフトシートなし' };
-    if (!scope.all) { // 自分の担当拠点の申請のみ操作可
-      const uid = sh.getRange(Number(row), 2).getDisplayValue();
-      const dep = (driverDepotMap()[uid] || {}).depot || '';
-      if (!scope.depots[dep]) return { status: 'denied', message: '担当外の拠点です' };
+    function renderReq(rows) {
+      if (!rows.length) { $('reqWrap').style.display = 'none'; return; }
+      let h = '';
+      rows.forEach(function (r) {
+        h += '<div class="reqcard"><div class="nm">' + esc(r.name) + '</div>'
+          + '<div class="meta">担当希望：' + esc(r.depot || r.depotId) + (r.note ? '／' + esc(r.note) : '') + '</div>'
+          + '<div class="btns"><button class="ap" onclick="decideReq(' + r.row + ',\'承認\')">承認</button>'
+          + '<button class="rj" onclick="decideReq(' + r.row + ',\'却下\')">却下</button></div></div>';
+      });
+      $('req').innerHTML = h; $('reqWrap').style.display = 'block';
     }
-    sh.getRange(Number(row), 7).setValue(decision);
-    return { status: 'ok', row: row, decision: decision };
-  } finally { lock.releaseLock(); }
-}
-
-// ===== シフト希望の取り消し（本人・申請中のみ）=====
-function shiftCancel(userId, stamp) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('シフト');
-    if (!sh) return { status: 'error', message: 'シフトシートなし' };
-    const disp = sh.getDataRange().getDisplayValues();
-    for (let i = 1; i < disp.length; i++) {
-      if (disp[i][1] === userId && disp[i][0] === stamp) {
-        if ((disp[i][6] || '') !== '申請中') return { status: 'error', message: '申請中のみ取り消せます' };
-        sh.deleteRow(i + 1);
-        return { status: 'ok' };
-      }
+    async function decideReq(row, decision) {
+      if (!confirm('この申請を「' + decision + '」にしますか？')) return;
+      await callGas('action=admin_decide&userId=' + encodeURIComponent(profile.userId) + '&row=' + row + '&decision=' + encodeURIComponent(decision));
+      await load();
     }
-    return { status: 'error', message: '対象が見つかりません' };
-  } finally { lock.releaseLock(); }
-}
 
-// ===== 拠点マスタ作成（1回だけ実行）緯度経度は後で geocodeBases で自動補完 =====
-function setupBaseMaster() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('拠点');
-  if (!sh) sh = ss.insertSheet('拠点', ss.getNumSheets());
-  sh.clear();
-  sh.getRange(1, 1, 1, 8).setValues([['拠点ID', 'ネットワーク', '拠点名', '都道府県', '住所', '緯度', '経度', '半径m']]);
-  const rows = [
-    ['J01', '自社', '高知', '高知県', '高知県高知市比島町2丁目13-7', '', '', 150],
-    ['J02', '自社', '奈良', '奈良県', '奈良県奈良市六条2丁目17-6', '', '', 150],
-    ['J03', '自社', '佐賀(上峰)', '佐賀県', '佐賀県三養基郡上峰町堤3787', '', '', 150],
-    ['J04', '自社', '広島(安佐南)', '広島県', '広島県広島市安佐南区伴南2-5-5', '', '', 150],
-    ['J05', '自社', '富山', '富山県', '富山県富山市太田', '', '', 200],
-    ['J06', '自社', '神戸', '兵庫県', '兵庫県神戸市西区池上町3-6-4', '', '', 150],
-    ['J07', '自社', '名古屋(緑区)', '愛知県', '愛知県名古屋市緑区浦里3丁目118', '', '', 150],
-    ['J08', '自社', '岡崎', '愛知県', '愛知県岡崎市百々西町', '', '', 150],
-    ['J09', '自社', '大野城', '福岡県', '福岡県大野城市川久保1-1-40-3', '', '', 150],
-    ['J10', '自社', '甲賀', '滋賀県', '滋賀県甲賀市甲南町竜法師2472', '', '', 150],
-    ['J11', '自社', '尼崎', '兵庫県', '兵庫県尼崎市道意町6-7-1', '', '', 150],
-    ['J12', '自社', '山形', '山形県', '山形県山形市立谷川3丁目965-2', '', '', 150],
-    ['J13', '自社', '大津', '滋賀県', '滋賀県大津市衣川1丁目33-36', '', '', 150],
-    ['J14', '自社', '龍ケ崎', '茨城県', '茨城県龍ケ崎市大塚町1997-1', '', '', 150],
-    ['K01', '国際', '東京(大田)', '東京都', '東京都大田区東海4-2-3', '', '', 150],
-    ['K02', '国際', '大阪(泉佐野)', '大阪府', '大阪府泉佐野市りんくう往来南3-3', '', '', 150],
-    ['K03', '国際', '横浜(中区)', '神奈川県', '神奈川県横浜市中区山下町279-1', '', '', 150],
-    ['K04', '国際', '福岡(粕屋)', '福岡県', '福岡県糟屋郡粕屋町江辻840番2', '', '', 150],
-    ['G01', 'GMT', '草加', '埼玉県', '埼玉県草加市松江5丁目1-39', '', '', 150],
-    ['G02', 'GMT', '大和', '神奈川県', '神奈川県大和市中央林間7-12-2', '', '', 150],
-    ['G03', 'GMT', '座間', '神奈川県', '神奈川県座間市ひばりが丘4-29-2', '', '', 150],
-    ['G04', 'GMT', '平和島(大田)', '東京都', '東京都大田区平和島6-1-1', '', '', 150],
-    ['G05', 'GMT', 'さいたま(岩槻)', '埼玉県', '埼玉県さいたま市岩槻区加倉146-2', '', '', 150],
-    ['A01', 'AZ', '戸田', '埼玉県', '埼玉県戸田市下戸田1丁目2-7', '', '', 150]
-  ];
-  sh.getRange(2, 1, rows.length, 8).setValues(rows);
-  sh.setFrozenRows(1);
-  sh.setColumnWidth(3, 130); sh.setColumnWidth(5, 320);
-  return rows.length + '拠点を登録しました。次に geocodeBases を実行して緯度経度を入れてください';
-}
-
-// ===== 住所→緯度経度を一括補完（1回／追加時に実行）=====
-function geocodeBases() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('拠点');
-  if (!sh || sh.getLastRow() < 2) return '拠点がありません';
-  const rng = sh.getRange(2, 5, sh.getLastRow() - 1, 3); // 住所/緯度/経度
-  const v = rng.getValues();
-  const geocoder = Maps.newGeocoder().setRegion('jp').setLanguage('ja');
-  let n = 0, ng = [];
-  for (let i = 0; i < v.length; i++) {
-    const addr = String(v[i][0] || '').replace(/\s+/g, ' ').trim();
-    if (!addr) continue;
-    if (v[i][1] !== '' && v[i][2] !== '') continue; // 既にある行はスキップ
-    try {
-      const r = geocoder.geocode(addr);
-      if (r.status === 'OK' && r.results[0]) {
-        v[i][1] = r.results[0].geometry.location.lat;
-        v[i][2] = r.results[0].geometry.location.lng;
-        n++;
-      } else { ng.push(addr); }
-    } catch (e) { ng.push(addr); }
-    Utilities.sleep(200);
-  }
-  rng.setValues(v);
-  return n + '件を設定しました' + (ng.length ? '／未取得' + ng.length + '件（住所を確認して手入力してください）' : '');
-}
-
-// ===== 拠点リスト読み込み（新レイアウト）=====
-function readBases() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('拠点');
-  if (!sh || sh.getLastRow() < 2) return [];
-  const v = sh.getRange(2, 1, sh.getLastRow() - 1, 8).getValues();
-  const bases = [];
-  for (let i = 0; i < v.length; i++) {
-    const id = String(v[i][0] || '').trim();
-    if (!id) continue;
-    const lat = parseFloat(v[i][5]), lng = parseFloat(v[i][6]), r = parseFloat(v[i][7]);
-    bases.push({
-      id: id, network: String(v[i][1] || '').trim(), name: String(v[i][2] || '').trim(),
-      pref: String(v[i][3] || '').trim(), addr: String(v[i][4] || '').trim(),
-      lat: isNaN(lat) ? null : lat, lng: isNaN(lng) ? null : lng, radius: isNaN(r) ? 150 : r
-    });
-  }
-  return bases;
-}
-// 打刻ページ用（緯度経度がある拠点だけ）
-function getConfig() {
-  const b = readBases().filter(function (x) { return x.lat != null && x.lng != null; })
-    .map(function (x) { return { name: x.name, lat: x.lat, lng: x.lng, radius: x.radius }; });
-  return { status: 'ok', bases: b };
-}
-// 登録ページ用（全拠点・ネットワーク付き）
-function getBaseList() {
-  return {
-    status: 'ok', bases: readBases().map(function (x) {
-      return { id: x.id, network: x.network, name: x.name, pref: x.pref };
-    })
-  };
-}
-function baseNameMap() { const m = {}; readBases().forEach(function (b) { m[b.id] = b.name; }); return m; }
-
-// ===== 会社マスタ（拠点とは独立。1拠点に複数社が入ってよい）=====
-function setupCompanyMaster() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('会社');
-  if (!sh) sh = ss.insertSheet('会社', ss.getNumSheets());
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 1).setValues([['会社名']]);
-    sh.getRange(2, 1, 4, 1).setValues([['自社'], ['国際'], ['GMT'], ['AZ']]);
-    sh.setFrozenRows(1); sh.setColumnWidth(1, 160);
-  }
-  return '会社マスタを作成しました（自社・国際・GMT・AZ）';
-}
-// 会社マスタを読む: [{name, depot(=拠点名)}]（B列=拠点ドロップダウン）
-function readCompanies() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('会社');
-  if (sh && sh.getLastRow() >= 2) {
-    return sh.getRange(2, 1, sh.getLastRow() - 1, 2).getDisplayValues()
-      .map(function (r) { return { name: String(r[0]).trim(), depot: String(r[1] || '').trim() }; })
-      .filter(function (x) { return x.name; });
-  }
-  // 会社シートが無ければ拠点のネットワーク列から（フォールバック）
-  const set = [], seen = {};
-  readBases().forEach(function (b) { if (b.network && !seen[b.network]) { seen[b.network] = 1; set.push({ name: b.network, depot: '' }); } });
-  return set;
-}
-// 拠点名 → 拠点ID
-function depotIdByName(name) {
-  name = String(name || '').trim();
-  if (!name) return '';
-  const bases = readBases();
-  for (let i = 0; i < bases.length; i++) if (bases[i].name === name) return bases[i].id;
-  return '';
-}
-// 会社名 → 所属拠点名
-function companyDepotName(company) {
-  company = String(company || '').trim();
-  const list = readCompanies();
-  for (let i = 0; i < list.length; i++) if (list[i].name === company) return list[i].depot;
-  return '';
-}
-// 登録画面用: 会社一覧＋自分の登録状況を1回で返す（往復を減らす）
-function getRegisterPage(userId) {
-  const idByName = {}; readBases().forEach(function (b) { idByName[b.name] = b.id; });
-  const companies = readCompanies().map(function (c) { return { name: c.name, depot: c.depot, depotId: idByName[c.depot] || '' }; });
-  const m = driverDepotMap()[userId];
-  let my = { registered: false };
-  if (m) {
-    const bn = {}; readBases().forEach(function (b) { bn[b.id] = b.name; });
-    my = { registered: true, name: m.name, company: m.company, depotName: bn[m.depot] || '', role: m.role || 'ドライバー' };
-  }
-  return { status: 'ok', companies: companies, my: my };
-}
-
-// 登録画面用: 会社ごとに所属拠点（名前＋ID）を返す（拠点は1回だけ読む）
-function getCompanyList() {
-  const idByName = {};
-  readBases().forEach(function (b) { idByName[b.name] = b.id; });
-  return {
-    status: 'ok',
-    companies: readCompanies().map(function (c) {
-      return { name: c.name, depot: c.depot, depotId: idByName[c.depot] || '' };
-    })
-  };
-}
-
-// ===== ドライバーマスタ（userId→拠点）=====
-function setupDriverMaster() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('ドライバー');
-  if (!sh) sh = ss.insertSheet('ドライバー', ss.getNumSheets());
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 7).setValues([['LINE_ID', '氏名', '会社', '拠点ID', '拠点名', '登録日', '区分']]);
-    sh.setFrozenRows(1); sh.setColumnWidth(1, 270);
-  }
-  return 'ドライバーマスタを作成しました';
-}
-// 既存のドライバーシートに「区分」列(G)を整える（1回だけ実行）
-// G1に見出しを入れ、空欄の区分は「ドライバー」で埋める
-function addRoleColumn() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('ドライバー');
-  if (!sh) return 'ドライバーシートがありません';
-  sh.getRange(1, 7).setValue('区分');
-  sh.setFrozenRows(1);
-  const last = sh.getLastRow();
-  if (last >= 2) {
-    const rng = sh.getRange(2, 7, last - 1, 1);
-    const v = rng.getValues(); let changed = false;
-    for (let i = 0; i < v.length; i++) {
-      if (!String(v[i][0]).trim()) { v[i][0] = 'ドライバー'; changed = true; }
+    function buildFilter() {
+      const set = {};
+      ['attendance', 'pending', 'alcohol', 'corrections'].forEach(function (k) {
+        curData[k].forEach(function (r) { if (r.company) set[r.company] = 1; });
+      });
+      const companies = Object.keys(set).sort();
+      if (companies.length < 2) { $('filter').style.display = 'none'; curCompany = ''; return; }
+      if (curCompany && companies.indexOf(curCompany) < 0) curCompany = ''; // 消えた会社は解除
+      let h = '<button class="chip' + (curCompany === '' ? ' on' : '') + '" data-c="">すべて</button>';
+      companies.forEach(function (c) {
+        h += '<button class="chip' + (curCompany === c ? ' on' : '') + '" data-c="' + esc(c) + '">' + esc(c) + '</button>';
+      });
+      const bar = $('filter');
+      bar.innerHTML = h; bar.style.display = 'flex';
+      Array.prototype.forEach.call(bar.querySelectorAll('.chip'), function (b) {
+        b.onclick = function () { curCompany = b.getAttribute('data-c'); buildFilter(); renderAll(); };
+      });
     }
-    if (changed) rng.setValues(v);
-  }
-  return '区分列を整えました（空欄はドライバーに設定）。内勤の方はG列を「内勤」に変更してください。';
-}
-function driverDepotMap() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('ドライバー');
-  const map = {};
-  if (!sh || sh.getLastRow() < 2) return map;
-  const v = sh.getRange(2, 1, sh.getLastRow() - 1, 7).getDisplayValues();
-  for (let i = 0; i < v.length; i++) {
-    const id = String(v[i][0]).trim();
-    if (id) map[id] = { name: String(v[i][1] || '').trim(), company: String(v[i][2] || '').trim(), depot: String(v[i][3]).trim(), role: String(v[i][6] || '').trim() };
-  }
-  return map;
-}
-// 登録済みの実名を優先（なければ渡された名前=LINE表示名）
-function driverName(userId, fallback) {
-  const m = driverDepotMap()[userId];
-  return (m && m.name) ? m.name : (fallback || '');
-}
-function getMyDepot(userId) {
-  const m = driverDepotMap()[userId];
-  if (!m) return { status: 'ok', registered: false };
-  return { status: 'ok', registered: true, name: m.name, company: m.company, depot: m.depot, depotName: (baseNameMap()[m.depot] || m.depot), role: m.role || 'ドライバー' };
-}
-function registerDriver(json) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let sh = ss.getSheetByName('ドライバー');
-    if (!sh) { setupDriverMaster(); sh = ss.getSheetByName('ドライバー'); }
-    const realName = String(json.name || json.displayName || '').trim();
-    const company = String(json.company || '').trim();
-    const role = (json.role === '内勤') ? '内勤' : 'ドライバー';
-    // 拠点は「会社マスタ」から自動決定（会社→所属拠点）。無ければクライアント指定にフォールバック
-    let depotName = companyDepotName(company);
-    let depotId = depotName ? depotIdByName(depotName) : '';
-    if (!depotId && json.depot) { depotId = String(json.depot).trim(); depotName = baseNameMap()[depotId] || depotName; }
-    if (!depotName && depotId) depotName = baseNameMap()[depotId] || '';
-    const stamp = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm:ss');
-    const disp = sh.getDataRange().getDisplayValues();
-    for (let i = 1; i < disp.length; i++) {
-      if (disp[i][0] === json.userId) {
-        sh.getRange(i + 1, 2, 1, 6).setValues([[realName, company, depotId, depotName, stamp, role]]);
-        try { linkRoleMenu_(json.userId); } catch (e) {}
-        return '登録しました（' + realName + '／' + company + '／' + depotName + '／' + role + '）';
-      }
+    function byCompany(rows) {
+      if (!curCompany) return rows;
+      return rows.filter(function (r) { return r.company === curCompany; });
     }
-    sh.appendRow([json.userId, realName, company, depotId, depotName, stamp, role]);
-    try { linkRoleMenu_(json.userId); } catch (e) {}
-    return '登録しました（' + realName + '／' + company + '／' + depotName + '／' + role + '）';
-  } finally { lock.releaseLock(); }
-}
-
-// ===== 位置判定（最寄り拠点が範囲内ならOK）=====
-function judgeLocation(lat, lng) {
-  if (!lat || !lng) return '位置情報なし';
-  const bases = readBases().filter(function (b) { return b.lat != null && b.lng != null; });
-  if (bases.length === 0) return '';
-  let best = null, bestD = Infinity;
-  for (let i = 0; i < bases.length; i++) {
-    const d = distM(bases[i].lat, bases[i].lng, Number(lat), Number(lng));
-    if (d < bestD) { bestD = d; best = bases[i]; }
-  }
-  if (best && bestD <= best.radius) return 'OK（' + best.name + '）';
-  return '範囲外(' + Math.round(bestD) + 'm)';
-}
-function distM(lat1, lng1, lat2, lng2) {
-  const R = 6371000, toR = Math.PI / 180;
-  const dLat = (lat2 - lat1) * toR, dLng = (lng2 - lng1) * toR;
-  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * toR) * Math.cos(lat2 * toR) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-  return 2 * R * Math.asin(Math.sqrt(a));
-}
-
-// ===== 共通ユーティリティ =====
-function normDate(v) { const m = String(v).match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})/); return m ? m[1] + '/' + ('0' + m[2]).slice(-2) + '/' + ('0' + m[3]).slice(-2) : String(v); }
-function normMonth(v) { const m = String(v).match(/(\d{4})\D+(\d{1,2})/); return m ? m[1] + '/' + ('0' + m[2]).slice(-2) : String(v); }
-function hmsToSec(t) { const m = String(t).match(/(\d+):(\d+)(?::(\d+))?/); return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+(m[3] || 0)) : 0; }
-function secToHM(sec) { return Math.floor(sec / 3600) + '時間' + Math.floor((sec % 3600) / 60) + '分' + (sec % 60) + '秒'; }
-
-// ============================================================
-// ===== アルコールチェック（メニューから撮影／Gemini読取）=====
-// 必要なスクリプトプロパティ:
-//   GEMINI_KEY   : Google AI Studio のAPIキー
-//   FOLDER_ID    : 画像保存フォルダID（任意・未設定なら画像は保存せず判定のみ）
-//   GEMINI_MODEL : 任意（未設定なら gemini-2.5-flash-lite）
-// 初回に setupAlcoholSheet を1回だけ実行してください。
-// ============================================================
-function prop(key) { return PropertiesService.getScriptProperties().getProperty(key); }
-
-// ----- アルコールシート作成（1回だけ実行）-----
-function setupAlcoholSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('アルコール');
-  if (!sh) sh = ss.insertSheet('アルコール', ss.getNumSheets());
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1, 1, 1, 12).setValues([['受信', '表示名', '氏名', '日付', '時間', '結果(mg/L)', '判定', '画像リンク', '受付ID', 'LINE_ID', '区分', '拠点']]);
-    sh.setFrozenRows(1);
-    sh.setColumnWidth(1, 150); sh.setColumnWidth(8, 220);
-  }
-  return 'アルコールシートを作成しました';
-}
-
-// ----- ボタン方式（LIFF）：base64画像を受け取って記録 -----
-function recordAlcohol(json) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try {
-    const b64 = String(json.image || '').replace(/^data:[^,]+,/, '');
-    const mime = json.mime || 'image/jpeg';
-    const blob = Utilities.newBlob(Utilities.base64Decode(b64), mime,
-      'alcohol_' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyyMMdd_HHmmss') + '.jpg');
-    const type = (json.type === '退勤') ? '退勤' : '出勤';
-    const r = processAlcohol(json.userId, json.displayName || '', blob, type, json.lat, json.lng, json.reqId || '');
-    return r.ok ? (type + 'のアルコールチェックを記録しました') : ('読取エラー: ' + (r.error || '').slice(0, 80));
-  } finally { lock.releaseLock(); }
-}
-
-// ----- 共通コア：画像→保存→Gemini→判定→アルコール記録＋出退勤打刻（ロックは呼び出し側が保持）-----
-function processAlcohol(userId, displayName, blob, type, lat, lng, reqId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sh = ss.getSheetByName('アルコール');
-  if (!sh) { setupAlcoholSheet(); sh = ss.getSheetByName('アルコール'); }
-  const tz = 'Asia/Tokyo';
-  const now = new Date();
-  const recvStr = Utilities.formatDate(now, tz, 'yyyy/MM/dd HH:mm:ss');
-  const home = (driverDepotMap()[userId] || {}).depot || '';
-  const depot = detectDepot(lat, lng, home);
-  let link = '', info = { name: '', date: '', time: '', value: '' }, judge = '';
-  try {
-    const folderId = prop('FOLDER_ID');
-    if (folderId) { try { link = DriveApp.getFolderById(folderId).createFile(blob).getUrl(); } catch (e) {} }
-    info = geminiExtract(blob);
-    judge = judgeOf(info.value);
-  } catch (err) {
-    sh.appendRow([recvStr, displayName || '', driverName(userId, displayName), '', '', '', '読取エラー', link, reqId, userId || '', type, depot]);
-    try { writeAttendance(userId, displayName, type, lat, lng, depot); } catch (e2) {}
-    return { ok: false, type: type, judge: '読取エラー', error: String(err && err.message ? err.message : err), depotName: (baseNameMap()[depot] || depot) };
-  }
-  const name = driverName(userId, info.name || displayName);
-  const dateV = info.date || Utilities.formatDate(now, tz, 'yyyy-MM-dd');
-  const timeV = info.time || Utilities.formatDate(now, tz, 'HH:mm:ss');
-  sh.appendRow([recvStr, displayName || '', name, dateV, timeV, info.value, judge, link, reqId, userId || '', type, depot]);
-  try { writeAttendance(userId, displayName, type, lat, lng, depot); } catch (e2) {}
-  return { ok: true, type: type, judge: judge, name: name, value: info.value, depotName: (baseNameMap()[depot] || depot) };
-}
-
-// ===== 写真を送るだけ方式（LINE Webhook）=====
-function handleLineWebhook(events) {
-  (events || []).forEach(function (ev) {
-    if (!ev || ev.type !== 'message' || !ev.message) return;
-    if (ev.message.type === 'image') handleAlcoholImageMessage(ev);
-    else if (ev.message.type === 'text') handleTextMessage(ev);
-  });
-}
-
-// テキスト：キーワードで「応援（GPS打刻リンク）」「登録」を呼び出す（常駐ボタン不要）
-function handleTextMessage(ev) {
-  const liffBase = 'https://liff.line.me/2010310932-MO7e9yXF';
-  const text = String((ev.message && ev.message.text) || '').trim();
-  if (text.indexOf('応援') >= 0 || text.toLowerCase().indexOf('ouen') >= 0) {
-    lineReply(ev.replyToken,
-      '【応援先での打刻】\n下のリンクを開いて、出勤/退勤を選び、検知器の画面を撮影してください。\n現在地から拠点を自動判定して記録します。\n' + liffBase + '/alcohol.html');
-  } else if (text.indexOf('登録') >= 0) {
-    lineReply(ev.replyToken,
-      '【登録】氏名・所属会社・拠点を登録してください。\n' + liffBase + '/register.html');
-  } else if (text.indexOf('修正') >= 0) {
-    lineReply(ev.replyToken,
-      '【勤怠の修正申請】打刻忘れ・時刻の間違いはこちらから申請してください（管理者の承認で反映されます）。\n' + liffBase + '/correction.html');
-  } else if (text.indexOf('管理者') >= 0 || text.indexOf('申請') >= 0) {
-    lineReply(ev.replyToken,
-      '【管理者の画面・申請】下のリンクを開いてください。\n'
-      + '・管理者の方 … 担当拠点の状況が表示されます\n'
-      + '・管理者でない方 … 申請フォームが表示されます（オーナー承認後に有効）\n'
-      + liffBase + '/admin.html');
-  } else {
-    lineReply(ev.replyToken,
-      'アルコールチェックは、検知器の結果画面を撮影してこのトークに送ってください。\n'
-      + '・別の拠点へ応援に行く日 →「応援」と送信\n'
-      + '・登録し直したいとき →「登録」と送信\n'
-      + '・打刻を忘れた/直したいとき →「修正」と送信\n'
-      + '・管理者の画面/申請 →「管理者」と送信');
-  }
-}
-
-function handleAlcoholImageMessage(ev) {
-  const token = prop('LINE_TOKEN');
-  if (!token) return;
-  const userId = (ev.source && ev.source.userId) || '';
-  const replyToken = ev.replyToken;
-  const dm = driverDepotMap()[userId];
-  if (!dm) { lineReply(replyToken, 'はじめに、メニューの「登録」から氏名・会社・拠点を登録してください。'); return; }
-
-  let blob;
-  try {
-    const res = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/message/' + ev.message.id + '/content',
-      { headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
-    if (res.getResponseCode() !== 200) { lineReply(replyToken, '画像の取得に失敗しました。もう一度送ってください。'); return; }
-    blob = res.getBlob();
-  } catch (e) { lineReply(replyToken, '画像の取得に失敗しました。もう一度送ってください。'); return; }
-
-  const type = inferAttendanceType(userId); // その日の1枚目=出勤、以降=退勤
-  let r;
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  try { r = processAlcohol(userId, dm.name || '', blob, type, '', '', 'msg_' + ev.message.id); }
-  finally { lock.releaseLock(); }
-
-  const head = (r.type === '退勤') ? '🌙 退勤' : '🌅 出勤';
-  if (!r.ok) { lineReply(replyToken, head + 'のアルコールチェック\n⚠️ うまく読み取れませんでした。明るい場所で撮り直して送ってください。'); return; }
-  const mark = (r.judge === '検出なし') ? '✅' : (r.judge === '酒気帯び基準超過') ? '⛔' : '⚠️';
-  let txt = head + 'のアルコールチェック\n' + mark + ' ' + r.judge;
-  if (r.value !== '' && r.value != null) txt += '\n測定値: ' + r.value + ' mg/L';
-  if (r.depotName) txt += '\n拠点: ' + r.depotName;
-  lineReply(replyToken, txt);
-}
-
-// その日の出勤打刻が無ければ「出勤」、あれば「退勤」
-function inferAttendanceType(userId) {
-  const today = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd');
-  const disp = SpreadsheetApp.getActiveSpreadsheet().getSheets()[0].getDataRange().getDisplayValues();
-  for (let i = 1; i < disp.length; i++) {
-    if (disp[i][0] === userId && normDate(disp[i][2]) === today) {
-      return String(disp[i][3]).trim() ? '退勤' : '出勤';
+    function renderAll() {
+      renderAtt(byCompany(curData.attendance));
+      renderShift(byCompany(curData.pending));
+      renderCorr(byCompany(curData.corrections));
+      renderAlc(byCompany(curData.alcohol));
     }
-  }
-  return '出勤';
-}
 
-// LINE返信（replyToken）
-function lineReply(replyToken, text) {
-  const token = prop('LINE_TOKEN');
-  if (!token || !replyToken) return;
-  try {
-    UrlFetchApp.fetch('https://api.line.me/v2/bot/message/reply', {
-      method: 'post', contentType: 'application/json',
-      headers: { Authorization: 'Bearer ' + token },
-      payload: JSON.stringify({ replyToken: replyToken, messages: [{ type: 'text', text: text }] }),
-      muteHttpExceptions: true
-    });
-  } catch (e) {}
-}
-
-// ----- 画面側ポーリング用：受付IDの結果を返す -----
-function getAlcoholResult(userId, reqId) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('アルコール');
-  if (!sh || sh.getLastRow() < 2) return { found: false };
-  const disp = sh.getDataRange().getDisplayValues();
-  for (let i = disp.length - 1; i >= 1; i--) { // 新しい行から探す
-    if (String(disp[i][8]) === String(reqId)) {
-      return { found: true, name: disp[i][2], date: disp[i][3], time: disp[i][4], value: disp[i][5], judge: disp[i][6] };
+    function renderCorr(rows) {
+      if (!rows.length) { $('corr').innerHTML = '<div class="empty">勤怠修正の申請はありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>対象日</th><th>修正内容</th><th>操作</th></tr>';
+      rows.forEach(function (r) {
+        const detail = '出勤 ' + (r.in || '―') + ' / 退勤 ' + (r.out || '―') + (r.reason ? '<div class="dep">理由：' + esc(r.reason) + '</div>' : '');
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td>'
+          + '<td>' + esc(r.date) + '</td><td>' + detail + '</td>'
+          + '<td class="btns"><button class="ap" onclick="decideCorr(' + r.row + ',\'承認\')">承認</button>'
+          + '<button class="rj" onclick="decideCorr(' + r.row + ',\'却下\')">却下</button></td></tr>';
+      });
+      $('corr').innerHTML = h + '</table>';
     }
-  }
-  return { found: false };
-}
+    async function decideCorr(row, decision) {
+      if (!confirm('この修正申請を「' + decision + '」にしますか？' + (decision === '承認' ? '\n（承認すると勤務時間に反映されます）' : ''))) return;
+      await callGas('action=correction_decide&userId=' + encodeURIComponent(profile.userId) + '&row=' + row + '&decision=' + encodeURIComponent(decision));
+      await load();
+    }
 
-// ----- Geminiで画像から項目抽出 -----
-function geminiExtract(blob) {
-  const key = prop('GEMINI_KEY');
-  if (!key) throw new Error('GEMINI_KEY が未設定');
-  const model = prop('GEMINI_MODEL') || 'gemini-2.5-flash-lite';
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent';
-  const prompt = 'この画像はアルコール検査結果の画面です。次の項目をJSONのみで返してください（前後の説明や ``` 記号は付けない）。'
-    + 'name=氏名、date=日付をYYYY-MM-DD形式、time=時間をHH:MM:SS形式、value=結果の数値のみ(mg/L)。'
-    + '読み取れない項目は空文字にする。形式: {"name":"","date":"","time":"","value":""}';
-  const payload = {
-    contents: [{ parts: [
-      { text: prompt },
-      { inline_data: { mime_type: blob.getContentType(), data: Utilities.base64Encode(blob.getBytes()) } }
-    ]}],
-    generationConfig: { temperature: 0, responseMimeType: 'application/json' }
-  };
-  const res = UrlFetchApp.fetch(url, {
-    method: 'post', contentType: 'application/json',
-    headers: { 'x-goog-api-key': key },
-    payload: JSON.stringify(payload), muteHttpExceptions: true
-  });
-  if (res.getResponseCode() !== 200)
-    throw new Error('Gemini' + res.getResponseCode() + ':' + res.getContentText().slice(0, 90));
-  const data = JSON.parse(res.getContentText());
-  if (!data.candidates || !data.candidates[0]) throw new Error('Gemini応答が空');
-  let txt = (data.candidates[0].content.parts[0].text || '').replace(/```json|```/g, '').trim();
-  const obj = JSON.parse(txt);
-  return {
-    name: obj.name ? String(obj.name).trim() : '',
-    date: obj.date ? String(obj.date).trim() : '',
-    time: obj.time ? String(obj.time).trim() : '',
-    value: (obj.value || obj.value === 0) ? String(obj.value).trim() : ''
-  };
-}
+    function renderAtt(rows) {
+      if (!rows.length) { $('att').innerHTML = '<div class="empty">本日の出勤記録はまだありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>出勤</th><th>退勤</th><th>勤務</th></tr>';
+      rows.forEach(function (r) {
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td><td>' + esc(r.in) + '</td><td>' + esc(r.out) + '</td><td>' + esc(r.work) + '</td></tr>';
+      });
+      $('att').innerHTML = h + '</table>';
+    }
 
-// ----- 判定（0.15mg/L = 酒気帯び基準）-----
-function judgeOf(valStr) {
-  if (valStr === '' || valStr === null || valStr === undefined) return '';
-  const num = parseFloat(valStr);
-  if (isNaN(num)) return '';
-  if (num === 0) return '検出なし';
-  if (num >= 0.15) return '酒気帯び基準超過';
-  return '微量検出・要確認';
-}
+    function renderShift(rows) {
+      if (!rows.length) { $('shift').innerHTML = '<div class="empty">承認待ちのシフトはありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>日付</th><th>時間</th><th>操作</th></tr>';
+      rows.forEach(function (r) {
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + '</div></td><td>' + esc(r.date) + '</td><td>' + esc(r.start) + '〜' + esc(r.end) + '</td>'
+          + '<td class="btns"><button class="ap" onclick="decide(' + r.row + ',\'確定\')">確定</button><button class="rj" onclick="decide(' + r.row + ',\'却下\')">却下</button></td></tr>';
+      });
+      $('shift').innerHTML = h + '</table>';
+    }
 
-// ===== 動作確認用：エディタで直接実行して getAdminData の所要時間を見る =====
-function testAdminPerf() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('管理者');
-  let id = '';
-  if (sh && sh.getLastRow() >= 2) id = sh.getRange(2, 1).getDisplayValue(); // 1人目の管理者LINE_ID
-  if (!id) { console.log('管理者シートのA2にLINE IDが必要です'); return; }
-  const t = Date.now();
-  const r = getAdminData(id);
-  console.log('結果: status=' + r.status + ' / 所要 ' + (Date.now() - t) + 'ms');
-  if (r.status === 'ok') console.log('担当=' + r.scope + ' / 出勤' + r.attendance.length + '・シフト' + r.pending.length + '・アルコール' + r.alcohol.length + '件');
-}
+    function renderAlc(rows) {
+      if (!rows.length) { $('alc').innerHTML = '<div class="empty">本日のアルコールチェックはまだありません</div>'; return; }
+      let h = '<table><tr><th>氏名</th><th>時間</th><th>結果</th><th>判定</th></tr>';
+      rows.forEach(function (r) {
+        let cls = 'err';
+        if (r.judge === '検出なし') cls = 'ok';
+        else if (r.judge === '酒気帯び基準超過') cls = 'over';
+        else if (r.judge === '微量検出・要確認') cls = 'warn';
+        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td><td>' + esc(r.time) + '</td><td>' + esc(r.value) + '</td><td><span class="badge ' + cls + '">' + esc(r.judge || '―') + '</span></td></tr>';
+      });
+      $('alc').innerHTML = h + '</table>';
+    }
+
+    async function decide(row, decision) {
+      if (!confirm('このシフトを「' + decision + '」にしますか？')) return;
+      await callGas('action=shift_decision&userId=' + encodeURIComponent(profile.userId) + '&row=' + row + '&decision=' + encodeURIComponent(decision));
+      await load();
+    }
+
+    function jsonpGet(qs) {
+      return new Promise(function (resolve, reject) {
+        const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const s = document.createElement('script'); let done = false;
+        const timer = setTimeout(function () { if (!done) { reject(new Error('timeout')); s.remove(); delete window[cb]; } }, 30000);
+        window[cb] = function (d) { done = true; clearTimeout(timer); resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) { clearTimeout(timer); reject(new Error('jsonp fail')); } s.remove(); };
+        s.src = GAS_URL + '?' + qs + '&callback=' + cb;
+        document.head.appendChild(s);
+      });
+    }
+    // GASはfetchの結果をブラウザから読めない（CORS）ため、毎回JSONPだけを使う
+    // （fetchを挟むとサーバー処理が2回走り、約2倍遅くなる）
+    async function callGas(qs) { return await jsonpGet(qs); }
+  </script>
+</body>
+</html>
