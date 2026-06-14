@@ -38,7 +38,7 @@
         <div><label for="out">退勤時刻</label><input type="time" id="out" step="1"></div>
       </div>
       <p class="note">片方だけの修正でもOKです（空欄は変更しません）。</p>
-      <label for="reason">理由</label>
+      <label for="reason">理由（必須）</label>
       <textarea id="reason" placeholder="例：退勤の打刻を忘れたため"></textarea>
       <button class="btn" id="save" disabled>この内容で申請</button>
     </div>
@@ -54,7 +54,7 @@
     function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
     function closeSafe(){ if (window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
     function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
-    function validate(){ $('save').disabled = !($('date').value && ($('in').value || $('out').value)); }
+    function validate(){ $('save').disabled = !($('date').value && ($('in').value || $('out').value) && $('reason').value.trim()); }
 
     async function loadDay(){
       const dt = $('date').value; if (!dt) return;
@@ -84,15 +84,17 @@
         $('date').onchange = function(){ $('in').dataset.touched=''; $('out').dataset.touched=''; $('in').value=''; $('out').value=''; loadDay(); };
         $('in').oninput = function(){ this.dataset.touched='1'; validate(); };
         $('out').oninput = function(){ this.dataset.touched='1'; validate(); };
+        $('reason').oninput = validate;
         $('save').onclick = doSave;
-        await loadDay();
         $('form').classList.remove('hidden');
+        loadDay();
       } catch(e){ $('done').textContent='⚠️ エラー: '+(e.message||e); $('done').classList.remove('hidden'); }
     };
 
     async function doSave(){
       const date = $('date').value.replace(/-/g,'/'), tin=$('in').value, tout=$('out').value, reason=$('reason').value.trim();
       if (!date || (!tin && !tout)) return;
+      if (!reason){ alert('理由を入力してください'); $('reason').focus(); return; }
       $('save').disabled = true; $('form').classList.add('hidden');
       $('done').innerHTML = '<span class="spin"></span>申請中…'; $('done').classList.remove('hidden');
       const params = new URLSearchParams();
