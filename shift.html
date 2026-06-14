@@ -3,153 +3,135 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>シフト希望</title>
+  <title>シフト</title>
   <style>
-    body{font-family:sans-serif;margin:0;padding:16px;color:#222}
-    h2{font-size:17px;margin:4px 0 10px}
-    .card{border:1px solid #e5e5e5;border-radius:10px;padding:14px;margin-bottom:18px}
-    label{display:block;font-size:13px;color:#666;margin:8px 0 4px}
-    input,textarea{width:100%;box-sizing:border-box;font-size:16px;padding:10px;border:1px solid #ccc;border-radius:8px}
-    .row2{display:flex;gap:10px}.row2>div{flex:1}
-    #send{width:100%;margin-top:14px;padding:14px;font-size:16px;font-weight:bold;color:#fff;background:#06c755;border:none;border-radius:10px}
-    .nav{display:flex;justify-content:space-between;align-items:center;margin:10px 0}
-    .nav button{font-size:14px;padding:6px 12px;border:1px solid #ccc;background:#fff;border-radius:6px}
-    .item{border-bottom:1px solid #eee;padding:10px 4px;display:flex;justify-content:space-between;align-items:center;font-size:14px;gap:8px}
-    .right{display:flex;gap:8px;align-items:center;white-space:nowrap}
-    .badge{font-size:12px;padding:3px 10px;border-radius:20px;color:#fff;white-space:nowrap}
-    .b-pending{background:#9aa0a6}.b-ok{background:#06c755}.b-no{background:#e0564b}
-    .cancel{font-size:12px;padding:4px 10px;border:1px solid #ccc;background:#fff;color:#666;border-radius:6px}
-    #status{text-align:center;color:#666;padding:16px}
+    body { font-family: sans-serif; margin: 0; background: #f7f8fa; color: #222; }
+    .wrap { padding: 18px 16px 40px; max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 19px; margin: 2px 0 12px; }
+    .card { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+    .ttl { font-size: 13px; font-weight: bold; color: #555; margin: 0 0 10px; }
+    label { display:block; font-weight:bold; font-size:13px; margin:12px 0 6px; }
+    input, textarea { width:100%; box-sizing:border-box; padding:12px; font-size:16px; border:1px solid #ccc; border-radius:10px; }
+    .row { display:flex; gap:10px; } .row>div{ flex:1; }
+    .btn { display:block; width:100%; box-sizing:border-box; border:none; border-radius:12px; margin-top:16px; padding:15px; font-size:16px; font-weight:bold; color:#fff; background:#e8870c; cursor:pointer; }
+    .btn:disabled { background:#bbb; }
+    table { width:100%; border-collapse:collapse; font-size:14px; } th,td{ padding:9px 6px; text-align:left; border-bottom:1px solid #eee; } th{ color:#999; font-weight:normal; font-size:12px; }
+    .badge { padding:2px 8px; border-radius:10px; font-size:12px; } .b-wait{background:#fff3e0;color:#b26a00;} .b-ok{background:#e8f6ec;color:#1f8a4c;} .b-ng{background:#fdecec;color:#c0392b;}
+    .gate { text-align:center; padding:36px 16px; color:#555; line-height:1.8; }
+    .gate .big { font-size:34px; }
+    #msg { text-align:center; padding:40px 10px; color:#666; }
+    .spin { display:inline-block; width:22px; height:22px; border:3px solid #ddd; border-top-color:#e8870c; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-4px; margin-right:8px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    .hidden { display:none; }
+    .done { color:#1f8a4c; font-weight:bold; text-align:center; margin-top:10px; }
   </style>
 </head>
 <body>
-  <h2>シフト希望を出す</h2>
-  <div class="card">
-    <label>日付</label>
-    <input type="date" id="date">
-    <div class="row2">
-      <div><label>開始</label><input type="time" id="start" value="09:00"></div>
-      <div><label>終了</label><input type="time" id="end" value="18:00"></div>
-    </div>
-    <label>備考（任意）</label>
-    <input type="text" id="note" placeholder="例: 午前のみ可">
-    <button id="send" onclick="submitShift()">この内容で希望を送信</button>
-  </div>
+  <div class="wrap">
+    <div id="msg"><span class="spin"></span>読み込み中…</div>
 
-  <h2 id="myname">あなたのシフト</h2>
-  <div class="nav">
-    <button onclick="changeMonth(-1)">◀ 前月</button>
-    <span id="monthLabel"></span>
-    <button onclick="changeMonth(1)">翌月 ▶</button>
+    <div id="gate" class="hidden">
+      <h1>シフト</h1>
+      <div class="card gate">
+        <div class="big">🚚</div>
+        シフト申請は<strong>内勤（倉庫・システムなど）</strong>の方のみご利用いただけます。<br>
+        ドライバーの方はシフト申請の必要はありません。
+      </div>
+    </div>
+
+    <div id="main" class="hidden">
+      <h1>シフト希望</h1>
+      <div class="card">
+        <p class="ttl">希望を申請</p>
+        <label for="date">日付</label>
+        <input type="date" id="date">
+        <div class="row">
+          <div><label for="start">開始</label><input type="time" id="start"></div>
+          <div><label for="end">終了</label><input type="time" id="end"></div>
+        </div>
+        <label for="note">備考（任意）</label>
+        <input type="text" id="note" placeholder="例：午前のみ希望">
+        <button class="btn" id="save" disabled>この内容で申請</button>
+        <div class="done hidden" id="done">✅ 申請しました</div>
+      </div>
+      <div class="card">
+        <p class="ttl" id="listTtl">今月の申請</p>
+        <table id="tbl"><thead><tr><th>日付</th><th>時間</th><th>状態</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
   </div>
-  <div id="status">読み込み中...</div>
-  <div id="list"></div>
 
   <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
   <script>
     const LIFF_ID = "2010310932-MO7e9yXF";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
+    const $ = function(id){ return document.getElementById(id); };
+    let profile=null;
+    function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
+    function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+    function validate(){ $('save').disabled = !($('date').value && $('start').value && $('end').value); }
+    function mdLabel(d){ const p=d.split('/'); return p[1]+'/'+p[2]; }
 
-    let userId = null, displayName = '', cur = new Date();
-    const enc = encodeURIComponent;
-    const pad = n => ('0' + n).slice(-2);
-    const ymd = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
-    const ym  = d => d.getFullYear() + '/' + pad(d.getMonth() + 1);
+    function renderList(rows){
+      const tb=$('tbl').querySelector('tbody'); tb.innerHTML='';
+      if (!rows || !rows.length){ tb.innerHTML='<tr><td colspan="3" style="color:#bbb">申請はありません</td></tr>'; return; }
+      rows.forEach(function(r){
+        let cls='b-wait'; if (r.status==='確定') cls='b-ok'; else if (r.status==='却下') cls='b-ng';
+        const tr=document.createElement('tr');
+        tr.innerHTML='<td>'+mdLabel(r.date)+'</td><td>'+(r.start||'')+'〜'+(r.end||'')+'</td><td><span class="badge '+cls+'">'+(r.status||'申請中')+'</span></td>';
+        tb.appendChild(tr);
+      });
+    }
+    async function loadList(){
+      const d=await callGas('action=shift_view&userId='+encodeURIComponent(profile.userId));
+      if (d&&d.status==='ok'){ $('listTtl').textContent=(d.month||'今月').replace('/','年')+'月の申請'; renderList(d.rows); }
+    }
 
-    window.onload = async function () {
-      try {
+    window.onload = async function(){
+      try{
+        if (typeof liff==='undefined') throw new Error('SDK読み込み失敗');
         await liff.init({ liffId: LIFF_ID });
-        if (!liff.isLoggedIn()) { liff.login(); return; }
-        const p = await liff.getProfile();
-        userId = p.userId; displayName = p.displayName;
-        document.getElementById('date').value = ymd(new Date());
-        load();
-      } catch (e) { document.getElementById('status').innerText = 'エラー: ' + e.message; }
+        if (!liff.isLoggedIn()){ liff.login(); return; }
+        profile = await liff.getProfile();
+        const my = await callGas('action=my_depot&userId='+encodeURIComponent(profile.userId));
+        const role = (my && my.role) || 'ドライバー';
+        $('msg').classList.add('hidden');
+        if (role !== '内勤'){ $('gate').classList.remove('hidden'); return; }
+        $('date').value = todayStr();
+        ['date','start','end'].forEach(function(id){ $(id).oninput=validate; });
+        $('save').onclick = doSave;
+        await loadList();
+        $('main').classList.remove('hidden');
+      }catch(e){ $('msg').textContent='⚠️ エラー: '+(e.message||e); }
     };
 
-    function changeMonth(d) { cur.setMonth(cur.getMonth() + d); load(); }
-
-    function jsonpGet(qs) {
-      return new Promise(function (resolve, reject) {
-        const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
-        const s = document.createElement('script'); let done = false;
-        window[cb] = function (d) { done = true; resolve(d); delete window[cb]; s.remove(); };
-        s.onerror = function () { if (!done) reject(new Error('jsonp fail')); s.remove(); };
-        s.src = GAS_URL + '?' + qs + '&callback=' + cb;
-        document.head.appendChild(s);
-      });
-    }
-
-    // fetch優先、ダメならJSONP（Android/iPhone両対応）
-    async function callGas(qs) {
-      try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
-      catch (e) { return await jsonpGet(qs); }
-    }
-
-    function submitShift() {
-      const date = document.getElementById('date').value;
-      const start = document.getElementById('start').value;
-      const end = document.getElementById('end').value;
-      const note = document.getElementById('note').value;
-      if (!date || !start || !end) { alert('日付・開始・終了を入力してください'); return; }
-      const params = new URLSearchParams();
+    async function doSave(){
+      if ($('save').disabled) return;
+      $('save').disabled=true;
+      const params=new URLSearchParams();
       params.append('contents', JSON.stringify({
-        action: 'shift_request', userId: userId, displayName: displayName,
-        date: date, start: start, end: end, note: note
+        action:'shift_request', userId:profile.userId, displayName:profile.displayName,
+        date:$('date').value.replace(/-/g,'/'), start:$('start').value, end:$('end').value, note:$('note').value||''
       }));
-      let ok = false;
-      try { ok = navigator.sendBeacon(GAS_URL, params); } catch (e) { ok = false; }
-      if (!ok) fetch(GAS_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: params });
-      const b = document.getElementById('send');
-      b.innerText = '✅ 送信しました';
-      setTimeout(function () { b.innerText = 'この内容で希望を送信'; load(); }, 1500);
+      try{ await fetch(GAS_URL,{method:'POST',mode:'no-cors',body:params}); }catch(e){}
+      await sleep(1400);
+      $('done').classList.remove('hidden');
+      $('start').value=''; $('end').value=''; $('note').value='';
+      await loadList();
+      setTimeout(function(){ $('done').classList.add('hidden'); validate(); }, 2500);
     }
 
-    async function load() {
-      const st = document.getElementById('status');
-      st.style.display = 'block'; st.innerText = '読み込み中...';
-      document.getElementById('list').innerHTML = '';
-      document.getElementById('monthLabel').innerText = ym(cur);
-      try {
-        const data = await callGas('action=shift_view&userId=' + enc(userId) + '&month=' + enc(ym(cur)));
-        render(data);
-      } catch (e) { st.innerText = '読み込みに失敗しました'; }
-    }
-
-    function render(data) {
-      const st = document.getElementById('status');
-      document.getElementById('myname').innerText = (data.name || displayName || '') + ' さんのシフト';
-      if (!data.rows || data.rows.length === 0) { st.innerText = 'この月の希望はまだありません'; return; }
-      st.style.display = 'none';
-      const list = document.getElementById('list'); list.innerHTML = '';
-      data.rows.forEach(function (r) {
-        const status = r.status || '申請中';
-        const cls = status === '確定' ? 'ok' : (status === '却下' ? 'no' : 'pending');
-        const left = (r.date ? r.date.slice(5) : '') + '　' + (r.start || '') + '〜' + (r.end || '') + (r.note ? '　(' + r.note + ')' : '');
-        const div = document.createElement('div'); div.className = 'item';
-        const ls = document.createElement('span'); ls.innerText = left;
-        const rs = document.createElement('span'); rs.className = 'right';
-        const badge = document.createElement('span'); badge.className = 'badge b-' + cls; badge.innerText = status;
-        rs.appendChild(badge);
-        if (status === '申請中') {
-          const btn = document.createElement('button'); btn.className = 'cancel'; btn.innerText = '取消';
-          btn.onclick = function () { cancelReq(r.stamp, btn); };
-          rs.appendChild(btn);
-        }
-        div.appendChild(ls); div.appendChild(rs);
-        list.appendChild(div);
+    function jsonpGet(qs){
+      return new Promise(function(resolve,reject){
+        const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+        const s=document.createElement('script'); let done=false;
+        const timer=setTimeout(function(){ if(!done){ reject(new Error('timeout')); s.remove(); delete window[cb]; } },30000);
+        window[cb]=function(d){ done=true; clearTimeout(timer); resolve(d); delete window[cb]; s.remove(); };
+        s.onerror=function(){ if(!done){ clearTimeout(timer); reject(new Error('jsonp fail')); } s.remove(); };
+        s.src=GAS_URL+'?'+qs+'&callback='+cb; document.head.appendChild(s);
       });
     }
-
-    async function cancelReq(stamp, btn) {
-      if (!confirm('この申請を取り消しますか？')) return;
-      btn.disabled = true; btn.innerText = '...';
-      try {
-        const res = await callGas('action=shift_cancel&userId=' + enc(userId) + '&stamp=' + enc(stamp));
-        if (res.status === 'ok') { load(); }
-        else { alert(res.message || '取り消せませんでした'); btn.disabled = false; btn.innerText = '取消'; }
-      } catch (e) { alert('通信に失敗しました'); btn.disabled = false; btn.innerText = '取消'; }
-    }
+    async function callGas(qs){ return await jsonpGet(qs); }
   </script>
 </body>
 </html>
