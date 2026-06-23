@@ -53,7 +53,20 @@
       <div id="corr"></div>
       <h2>今日のアルコールチェック</h2>
       <div id="alc"></div>
-      <button class="reload" id="reload">最新に更新</button>
+      <h2>期間レポート（PDF）</h2>
+      <div id="reportBox" style="border:1px solid #e3e3e3;border-radius:10px;padding:12px">
+        <div style="font-size:13px;color:#555;margin-bottom:8px">各ドライバーの出勤・アルコール状況をPDFで出力します。</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label style="font-size:13px">期間</label>
+          <input type="date" id="rFrom" style="padding:6px">
+          <span>〜</span>
+          <input type="date" id="rTo" style="padding:6px">
+          <button id="rMonth" style="padding:6px 10px;border:1px solid #cfcfcf;background:#fff;border-radius:6px">今月</button>
+        </div>
+        <button class="reload" id="rMake" style="margin-top:10px">PDFを作成</button>
+        <div id="rMsg" style="margin-top:8px;font-size:13px;font-weight:bold;text-align:center"></div>
+      </div>
+      <button class="reload" id="reload" style="margin-top:14px">最新に更新</button>
     </div>
     <div id="denied" style="display:none">
       <p>この画面を見る権限がありません。<br>管理者として申請するか、下のIDをオーナーに伝えてください。</p>
@@ -87,6 +100,7 @@
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
         $('reload').onclick = load;
+        setupReport();
         await load();
       } catch (e) {
         $('loading').textContent = '⚠️ エラー: ' + (e.message || e);
@@ -116,6 +130,39 @@
     }
 
     let applyLoaded = false;
+    function setupReport() {
+      const now = new Date();
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      const fmt = function (d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+      $('rFrom').value = fmt(first); $('rTo').value = fmt(last);
+      $('rMonth').onclick = function () { $('rFrom').value = fmt(first); $('rTo').value = fmt(last); };
+      $('rMake').onclick = makeReport;
+    }
+    async function makeReport() {
+      const from = $('rFrom').value, to = $('rTo').value;
+      if (!from || !to) { $('rMsg').textContent = '期間を選んでください'; return; }
+      $('rMake').disabled = true;
+      $('rMsg').textContent = 'PDFを作成中…（30秒ほどかかることがあります）';
+      try {
+        const d = await callGas('action=period_report&userId=' + encodeURIComponent(profile.userId)
+          + '&from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to), 90000);
+        if (d && d.status === 'ok') {
+          $('rMsg').innerHTML = '✅ 作成しました（ドライバー' + d.drivers + '名）<br><a href="' + d.url + '" target="_blank" style="color:#06934a;font-weight:bold">PDFを開く</a>';
+          try { window.open(d.url, '_blank'); } catch (e) {}
+        } else if (d && d.status === 'empty') {
+          $('rMsg').textContent = '対象のドライバーがいません';
+        } else if (d && d.status === 'denied') {
+          $('rMsg').textContent = '権限がありません';
+        } else {
+          $('rMsg').textContent = '作成できませんでした' + (d && d.message ? '：' + d.message : '');
+        }
+      } catch (e) {
+        $('rMsg').textContent = '⚠️ ' + (e.message || e);
+      }
+      $('rMake').disabled = false;
+    }
+
     async function setupApply() {
       if (applyLoaded) return; applyLoaded = true;
       try {
@@ -260,11 +307,11 @@
       await load();
     }
 
-    function jsonpGet(qs) {
+    function jsonpGet(qs, ms) {
       return new Promise(function (resolve, reject) {
         const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
         const s = document.createElement('script'); let done = false;
-        const timer = setTimeout(function () { if (!done) { reject(new Error('timeout')); s.remove(); delete window[cb]; } }, 30000);
+        const timer = setTimeout(function () { if (!done) { reject(new Error('timeout')); s.remove(); delete window[cb]; } }, ms || 30000);
         window[cb] = function (d) { done = true; clearTimeout(timer); resolve(d); delete window[cb]; s.remove(); };
         s.onerror = function () { if (!done) { clearTimeout(timer); reject(new Error('jsonp fail')); } s.remove(); };
         s.src = GAS_URL + '?' + qs + '&callback=' + cb;
@@ -273,7 +320,7 @@
     }
     // GASはfetchの結果をブラウザから読めない（CORS）ため、毎回JSONPだけを使う
     // （fetchを挟むとサーバー処理が2回走り、約2倍遅くなる）
-    async function callGas(qs) { return await jsonpGet(qs); }
+    async function callGas(qs, ms) { return await jsonpGet(qs, ms); }
   </script>
 </body>
 </html>
