@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>検査件数</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #fff; color: #222; }
+    .wrap { padding: 22px 20px 40px; max-width: 520px; margin: 0 auto; }
+    h1 { font-size: 20px; margin: 4px 0 16px; }
+    .card { border: 1px solid #e2e8ef; border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+    .ttl { font-weight: bold; font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; }
+    .bar { display: inline-block; width: 6px; height: 18px; border-radius: 3px; margin-right: 8px; }
+    .row { display: flex; gap: 12px; }
+    .row > div { flex: 1; text-align: center; background: #f5f8fb; border-radius: 10px; padding: 12px 6px; }
+    .row .lbl { font-size: 13px; color: #667; }
+    .row .num { font-size: 26px; font-weight: bold; margin-top: 2px; }
+    .total { text-align: center; margin-top: 10px; font-size: 14px; color: #555; }
+    #msg { text-align: center; padding: 30px; color: #888; }
+    .hidden { display: none; }
+    .spin { display:inline-block; width:20px; height:20px; border:3px solid #ddd; border-top-color:#2d7dd2; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-3px; margin-right:8px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+  </style>
+  <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+  <script>
+    const LIFF_ID = "2010310932-MO7e9yXF";
+    const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
+    const $ = function (id) { return document.getElementById(id); };
+
+    window.onload = async function () {
+      try {
+        await liff.init({ liffId: LIFF_ID });
+        if (!liff.isLoggedIn()) { liff.login(); return; }
+        const prof = await liff.getProfile();
+        const d = await jsonpGet('action=inspect_stats&userId=' + encodeURIComponent(prof.userId));
+        if (!d || d.status !== 'ok') { $('msg').textContent = '読み込みに失敗しました'; return; }
+        render('today', '#e8870c', '今日', d.today);
+        render('week', '#2d7dd2', '今週（直近7日）', d.week);
+        render('month', '#0e8f8f', '当月', d.month);
+        $('msg').classList.add('hidden'); $('main').classList.remove('hidden');
+      } catch (e) {
+        $('msg').textContent = '⚠️ エラー: ' + (e.message || e);
+      }
+    };
+
+    function render(id, color, label, o) {
+      o = o || { k: 0, g: 0 };
+      const total = (o.k || 0) + (o.g || 0);
+      $(id).innerHTML = '<p class="ttl"><span class="bar" style="background:' + color + '"></span>' + label + '</p>'
+        + '<div class="row"><div><div class="lbl">気密検査</div><div class="num">' + (o.k || 0) + '</div></div>'
+        + '<div><div class="lbl">外部検査</div><div class="num">' + (o.g || 0) + '</div></div></div>'
+        + '<div class="total">合計 <b>' + total + '</b> 件</div>';
+    }
+
+    function jsonpGet(qs) {
+      return new Promise(function (resolve, reject) {
+        const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
+        const s = document.createElement('script'); let done = false;
+        const timer = setTimeout(function () { if (!done) { reject(new Error('timeout')); s.remove(); delete window[cb]; } }, 30000);
+        window[cb] = function (d) { done = true; clearTimeout(timer); resolve(d); delete window[cb]; s.remove(); };
+        s.onerror = function () { if (!done) { clearTimeout(timer); reject(new Error('jsonp fail')); } s.remove(); };
+        s.src = GAS_URL + '?' + qs + '&callback=' + cb;
+        document.head.appendChild(s);
+      });
+    }
+  </script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>検査件数</h1>
+    <div id="msg"><span class="spin"></span>読み込み中…</div>
+    <div id="main" class="hidden">
+      <div class="card" id="today"></div>
+      <div class="card" id="week"></div>
+      <div class="card" id="month"></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -41,12 +41,17 @@
         // 出勤/退勤の判定（type / state / liff.state すべて対応、in/out 対応）
         const sp = new URLSearchParams(location.search);
         let raw = sp.get('type') || sp.get('state');
+        let w = sp.get('w');
         const ls = sp.get('liff.state');
-        if (!raw && ls) {
+        if (ls) {
           const inner = new URLSearchParams(ls.charAt(0) === '?' ? ls.slice(1) : ls);
-          raw = inner.get('type') || inner.get('state');
+          if (!raw) raw = inner.get('type') || inner.get('state');
+          if (!w) w = inner.get('w');
         }
         const type = (raw === 'out' || raw === '退勤') ? '退勤' : '出勤';
+        const doneMsg = (w === '1')
+          ? (type === '退勤' ? '業務を終了しました' : '業務を開始しました')
+          : (type + 'を記録しました');
 
         setMsg('位置情報を取得中...');
         const coords = await getCoords();
@@ -79,8 +84,8 @@
         try { ok = navigator.sendBeacon(GAS_URL, params); } catch (e) { ok = false; }
         if (!ok) fetch(GAS_URL, { method: 'POST', mode: 'no-cors', keepalive: true, body: params });
 
-        if (warn) setMsg('✅ ' + type + 'を記録しました', warn, true);
-        else setMsg('✅ ' + type + 'を記録しました', coords ? '' : '(位置情報なし)');
+        if (warn) setMsg('✅ ' + doneMsg, warn, true);
+        else setMsg('✅ ' + doneMsg, coords ? '' : '(位置情報なし)');
         setTimeout(closeSafe, warn ? 4000 : 1500);
 
       } catch (e) {

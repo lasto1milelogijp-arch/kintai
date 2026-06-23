@@ -105,8 +105,9 @@
       const d = await callGas(q);
       if (!d || d.status !== 'ok') { $('msg').textContent = '読み込みに失敗しました'; return; }
       curMonth = d.month;
-      var nm = d.name || profName; $('name').textContent = nm ? (nm + ' さんの勤務時間') : '勤務時間';
-      $('sub').textContent = '今週の合計と、月ごとの記録を表示します';
+      var nm = d.name || profName;
+      if (window.__W) { $('name').textContent = nm ? (nm + ' さんの業務ログ') : '業務ログ'; $('sub').textContent = '今週・当月の業務時間を表示します'; }
+      else { $('name').textContent = nm ? (nm + ' さんの勤務時間') : '勤務時間'; $('sub').textContent = '今週の合計と、月ごとの記録を表示します'; }
       renderWeek(d.week, d.weekTotalText);
       renderMonth(d);
       $('msg').classList.add('hidden'); $('main').classList.remove('hidden');
@@ -122,6 +123,16 @@
         if (typeof liff === 'undefined') throw new Error('SDK読み込み失敗');
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) { liff.login(); return; }
+        // 業務委託向け文言（w=1）
+        var sp = new URLSearchParams(location.search); var w = sp.get('w');
+        var lss = sp.get('liff.state'); if (!w && lss) { try { w = new URLSearchParams(lss.charAt(0) === '?' ? lss.slice(1) : lss).get('w'); } catch (e) {} }
+        window.__W = (w === '1');
+        if (window.__W) {
+          document.title = '業務ログ';
+          document.querySelectorAll('#weekTbl thead th, #monthTbl thead th').forEach(function (th, i) {
+            var k = i % 4; if (k === 1) th.textContent = '開始'; else if (k === 2) th.textContent = '終了'; else if (k === 3) th.textContent = '業務';
+          });
+        }
         const prof = await liff.getProfile(); userId = prof.userId; profName = prof.displayName || '';
         $('prev').onclick = function () { shiftMonth(-1); };
         $('next').onclick = function () { shiftMonth(1); };
