@@ -67,6 +67,7 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
     const $ = function(id){ return document.getElementById(id); };
     let profile=null;
+    let idToken='';
     function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
     function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
     function validate(){ $('save').disabled = !($('date').value && $('start').value && $('end').value); }
@@ -93,6 +94,8 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()){ liff.login(); return; }
         profile = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
         const d = await callGas('action=shift_page&userId='+encodeURIComponent(profile.userId));
         const role = (d && d.role) || 'ドライバー';
         $('msg').classList.add('hidden');
@@ -111,7 +114,7 @@
       $('save').disabled=true;
       const params=new URLSearchParams();
       params.append('contents', JSON.stringify({
-        action:'shift_request', userId:profile.userId, displayName:profile.displayName,
+        action:'shift_request', userId:profile.userId, displayName:profile.displayName, idToken:idToken,
         date:$('date').value.replace(/-/g,'/'), start:$('start').value, end:$('end').value, note:$('note').value||''
       }));
       try{ await fetch(GAS_URL,{method:'POST',mode:'no-cors',body:params}); }catch(e){}
@@ -132,7 +135,7 @@
         s.src=GAS_URL+'?'+qs+'&callback='+cb; document.head.appendChild(s);
       });
     }
-    async function callGas(qs){ return await jsonpGet(qs); }
+    async function callGas(qs){ return await jsonpGet(qs+'&idToken='+encodeURIComponent(idToken)); }
   </script>
 </body>
 </html>

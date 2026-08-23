@@ -18,6 +18,7 @@
   <script>
     const LIFF_ID = "2010310932-MO7e9yXF";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
+    let idToken = '';
 
     const msgEl = document.getElementById('msg');
     const subEl = document.getElementById('sub');
@@ -37,6 +38,8 @@
 
         setMsg('プロフィール取得中...');
         const profile = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
 
         // 出勤/退勤の判定（type / state / liff.state すべて対応、in/out 対応）
         const sp = new URLSearchParams(location.search);
@@ -78,7 +81,7 @@
         const params = new URLSearchParams();
         params.append('contents', JSON.stringify({
           userId: profile.userId, displayName: profile.displayName,
-          type: type, lat: coords ? coords.lat : '', lng: coords ? coords.lng : ''
+          type: type, lat: coords ? coords.lat : '', lng: coords ? coords.lng : '', idToken: idToken
         }));
         let ok = false;
         try { ok = navigator.sendBeacon(GAS_URL, params); } catch (e) { ok = false; }
@@ -116,6 +119,7 @@
       });
     }
     async function callGas(qs) {
+      qs += '&idToken=' + encodeURIComponent(idToken);
       try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
       catch (e) { return await jsonpGet(qs); }
     }

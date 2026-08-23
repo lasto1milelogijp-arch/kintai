@@ -25,6 +25,7 @@
   <script>
     const LIFF_ID = "2010310932-MO7e9yXF";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
+    let idToken = '';
     const $ = function (id) { return document.getElementById(id); };
 
     window.onload = async function () {
@@ -32,6 +33,8 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) { liff.login(); return; }
         const prof = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
         const d = await jsonpGet('action=inspect_stats&userId=' + encodeURIComponent(prof.userId));
         if (!d || d.status !== 'ok') { $('msg').textContent = '読み込みに失敗しました'; return; }
         render('today', '#e8870c', '今日', d.today);
@@ -53,6 +56,7 @@
     }
 
     function jsonpGet(qs) {
+      qs += '&idToken=' + encodeURIComponent(idToken);
       return new Promise(function (resolve, reject) {
         const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
         const s = document.createElement('script'); let done = false;

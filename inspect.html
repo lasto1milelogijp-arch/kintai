@@ -27,7 +27,7 @@
   <script>
     const LIFF_ID = "2010310932-MO7e9yXF";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
-    let profile = null, lat = '', lng = '';
+    let profile = null, idToken = '', lat = '', lng = '';
     const $ = function (id) { return document.getElementById(id); };
 
     window.onload = async function () {
@@ -35,6 +35,8 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(function (p) { lat = p.coords.latitude; lng = p.coords.longitude; }, function () {}, { timeout: 6000 });
         }
@@ -52,7 +54,7 @@
       $('kimitsu').disabled = true; $('gaibu').disabled = true;
       $('msg').innerHTML = '<span class="spin"></span>記録中…';
       const params = new URLSearchParams();
-      params.append('contents', JSON.stringify({ action: 'inspect', userId: profile.userId, displayName: profile.displayName, kind: kind, lat: lat, lng: lng }));
+      params.append('contents', JSON.stringify({ action: 'inspect', userId: profile.userId, displayName: profile.displayName, kind: kind, lat: lat, lng: lng, idToken: idToken }));
       try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
       $('msg').textContent = '✅ ' + kind + ' を記録しました';
       setTimeout(function () { refresh(); $('kimitsu').disabled = false; $('gaibu').disabled = false; }, 800);
@@ -84,6 +86,7 @@
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
 
     function jsonpGet(qs) {
+      qs += '&idToken=' + encodeURIComponent(idToken);
       return new Promise(function (resolve, reject) {
         const cb = 'cb_' + Date.now() + '_' + Math.floor(Math.random() * 100000);
         const s = document.createElement('script'); let done = false;

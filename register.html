@@ -55,6 +55,7 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
 
     let profile = null;
+    let idToken = '';
     let companyMap = {}; // 会社名 -> {depot, depotId}
     const $ = function (id) { return document.getElementById(id); };
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -86,6 +87,8 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
 
         const page = await callGas('action=register_page&userId=' + encodeURIComponent(profile.userId));
         const companies = (page && page.companies) || [];
@@ -128,7 +131,7 @@
       const params = new URLSearchParams();
       params.append('contents', JSON.stringify({
         action: 'register', userId: profile.userId, displayName: profile.displayName,
-        name: name, company: company, depot: info.depotId, role: document.getElementById('role').value
+        name: name, company: company, depot: info.depotId, role: document.getElementById('role').value, idToken: idToken
       }));
       try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
 
@@ -157,7 +160,7 @@
       });
     }
     // GASはfetch結果を読めない（CORS）ため読み取りはJSONPのみ
-    async function callGas(qs) { return await jsonpGet(qs); }
+    async function callGas(qs) { return await jsonpGet(qs + '&idToken=' + encodeURIComponent(idToken)); }
   </script>
 </body>
 </html>

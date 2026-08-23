@@ -89,6 +89,7 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
 
     let profile = null;
+    let idToken = '';
     let curData = { attendance: [], pending: [], alcohol: [] };
     let curCompany = ''; // '' = すべて
     const $ = function (id) { return document.getElementById(id); };
@@ -99,6 +100,8 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
         $('reload').onclick = load;
         setupReport();
         await load();
@@ -186,7 +189,7 @@
       $('applyMsg').textContent = '送信中…';
       const params = new URLSearchParams();
       params.append('contents', JSON.stringify({
-        action: 'admin_apply', userId: profile.userId, displayName: profile.displayName, company: company, note: $('anote').value || ''
+        action: 'admin_apply', userId: profile.userId, displayName: profile.displayName, company: company, note: $('anote').value || '', idToken: idToken
       }));
       try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
       $('applyMsg').textContent = '✅ 申請しました。承認されると通知が届きます。';
@@ -320,7 +323,7 @@
     }
     // GASはfetchの結果をブラウザから読めない（CORS）ため、毎回JSONPだけを使う
     // （fetchを挟むとサーバー処理が2回走り、約2倍遅くなる）
-    async function callGas(qs, ms) { return await jsonpGet(qs, ms); }
+    async function callGas(qs, ms) { return await jsonpGet(qs + '&idToken=' + encodeURIComponent(idToken), ms); }
   </script>
 </body>
 </html>

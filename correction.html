@@ -50,6 +50,7 @@
     const LIFF_ID = "2010310932-MO7e9yXF";
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
     let profile = null;
+    let idToken = '';
     const $ = function (id) { return document.getElementById(id); };
     function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
     function closeSafe(){ if (window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
@@ -80,6 +81,8 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
         $('date').value = todayStr();
         $('date').onchange = function(){ $('in').dataset.touched=''; $('out').dataset.touched=''; $('in').value=''; $('out').value=''; loadDay(); };
         $('in').oninput = function(){ this.dataset.touched='1'; validate(); };
@@ -99,7 +102,7 @@
       $('done').innerHTML = '<span class="spin"></span>申請中…'; $('done').classList.remove('hidden');
       const params = new URLSearchParams();
       params.append('contents', JSON.stringify({
-        action:'correction', userId:profile.userId, displayName:profile.displayName,
+        action:'correction', userId:profile.userId, displayName:profile.displayName, idToken:idToken,
         date:date, in:tin, out:tout, reason:reason
       }));
       try { await fetch(GAS_URL, { method:'POST', mode:'no-cors', body:params }); } catch(e){}
@@ -120,7 +123,7 @@
         s.src=GAS_URL+'?'+qs+'&callback='+cb; document.head.appendChild(s);
       });
     }
-    async function callGas(qs){ return await jsonpGet(qs); }
+    async function callGas(qs){ return await jsonpGet(qs+'&idToken='+encodeURIComponent(idToken)); }
   </script>
 </body>
 </html>

@@ -55,6 +55,7 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
 
     let profile = null;
+    let idToken = '';
     let curType = '出勤';
     const $ = function (id) { return document.getElementById(id); };
     function show(id) { ['intro', 'status', 'result'].forEach(function (x) { $(x).classList.toggle('hidden', x !== id); }); }
@@ -78,6 +79,8 @@
         await liff.init({ liffId: LIFF_ID });
         if (!liff.isLoggedIn()) { liff.login(); return; }
         profile = await liff.getProfile();
+        idToken = liff.getIDToken() || '';
+        if (!idToken) throw new Error('LINE本人確認情報を取得できません');
       } catch (e) {
         setStatus('⚠️ エラー<br><span style="font-size:14px;color:#888">' + (e.message || e) + '</span>');
         return;
@@ -101,7 +104,7 @@
       params.append('contents', JSON.stringify({
         action: 'alcohol', userId: profile.userId, displayName: profile.displayName,
         image: b64, mime: 'image/jpeg', reqId: reqId,
-        type: curType, lat: coords ? coords.lat : '', lng: coords ? coords.lng : ''
+        type: curType, lat: coords ? coords.lat : '', lng: coords ? coords.lng : '', idToken: idToken
       }));
       // 送信（応答は読まず、結果は下のポーリングで取得）
       try { await fetch(GAS_URL, { method: 'POST', mode: 'no-cors', body: params }); } catch (e) {}
@@ -171,6 +174,7 @@
       });
     }
     async function callGas(qs) {
+      qs += '&idToken=' + encodeURIComponent(idToken);
       try { const res = await fetch(GAS_URL + '?' + qs); return await res.json(); }
       catch (e) { return await jsonpGet(qs); }
     }
