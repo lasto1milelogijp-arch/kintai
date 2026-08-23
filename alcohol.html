@@ -137,6 +137,11 @@
         if (r.name) html += '<div class="row">氏名: ' + r.name + '</div>';
         if (r.date) html += '<div class="row">日付: ' + r.date + '</div>';
         if (r.time) html += '<div class="row">時間: ' + r.time + '</div>';
+        if (judge !== '検出なし') {
+          html += curType === '出勤'
+            ? '<div class="row" style="font-weight:bold;color:#d23c3c">出勤は記録されていません。<br>運転せず、管理者へ連絡してください。</div>'
+            : '<div class="row" style="font-weight:bold;color:#d9772b">退勤は記録しました。<br>管理者へ連絡してください。</div>';
+        }
       }
       $('card').className = 'card ' + cls;
       $('card').innerHTML = html;
