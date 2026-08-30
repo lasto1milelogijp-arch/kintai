@@ -45,6 +45,8 @@
       <div id="filter" class="filterbar" style="display:none"></div>
       <div id="reqWrap" style="display:none"><h2>管理者申請</h2><div id="req"></div></div>
       <div id="overWrap" style="display:none"><h2 id="overTtl">直近7日 50時間超</h2><div id="over"></div></div>
+      <div id="forgetWrap" style="display:none"><h2>今月の打刻忘れ</h2><div id="forget"></div></div>
+      <div id="missingWrap" style="display:none"><h2>本日の未出勤・未退勤</h2><div id="missing"></div></div>
       <h2>今日の出勤状況</h2>
       <div id="att"></div>
       <h2>承認待ちシフト</h2>
@@ -90,7 +92,7 @@
 
     let profile = null;
     let idToken = '';
-    let curData = { attendance: [], pending: [], alcohol: [] };
+    let curData = { attendance: [], missingAttendance: [], pending: [], alcohol: [], corrections: [], overHours: [], forgetStats: [] };
     let curCompany = ''; // '' = すべて
     const $ = function (id) { return document.getElementById(id); };
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
@@ -124,7 +126,7 @@
       }
       $('scope').textContent = '担当範囲：' + (d.scope || '') + (d.manager ? '（' + d.manager + '）' : '');
       renderReq(d.adminRequests || []);
-      curData = { attendance: d.attendance || [], pending: d.pending || [], alcohol: d.alcohol || [], corrections: d.corrections || [], overHours: d.overHours || [] };
+      curData = { attendance: d.attendance || [], missingAttendance: d.missingAttendance || [], pending: d.pending || [], alcohol: d.alcohol || [], corrections: d.corrections || [], overHours: d.overHours || [], forgetStats: d.forgetStats || [] };
       $('overTtl').textContent = '直近7日 ' + (d.overThreshold || 50) + '時間超';
       buildFilter();
       renderAll();
@@ -214,7 +216,7 @@
 
     function buildFilter() {
       const set = {};
-      ['attendance', 'pending', 'alcohol', 'corrections', 'overHours'].forEach(function (k) {
+      ['attendance', 'missingAttendance', 'pending', 'alcohol', 'corrections', 'overHours', 'forgetStats'].forEach(function (k) {
         curData[k].forEach(function (r) { if (r.company) set[r.company] = 1; });
       });
       const companies = Object.keys(set).sort();
@@ -236,10 +238,25 @@
     }
     function renderAll() {
       renderOver(byCompany(curData.overHours));
+      renderForget(byCompany(curData.forgetStats));
+      renderMissing(byCompany(curData.missingAttendance));
       renderAtt(byCompany(curData.attendance));
       renderShift(byCompany(curData.pending));
       renderCorr(byCompany(curData.corrections));
       renderAlc(byCompany(curData.alcohol));
+    }
+
+    function renderMissing(rows) {
+      if (!rows.length) { $('missingWrap').style.display = 'none'; return; }
+      let h = '<table><tr><th>氏名</th><th>拠点・会社</th><th>状態</th><th>予定</th></tr>';
+      rows.forEach(function (r) {
+        const cls = r.kind === '未出勤' ? 'err' : 'warn';
+        h += '<tr><td>' + esc(r.name) + '</td>'
+          + '<td>' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</td>'
+          + '<td><span class="badge ' + cls + '">' + esc(r.kind) + '</span></td>'
+          + '<td>' + esc(r.start) + '～' + esc(r.end) + '<div class="dep">' + esc(r.source || '') + '</div></td></tr>';
+      });
+      $('missing').innerHTML = h + '</table>'; $('missingWrap').style.display = 'block';
     }
 
     function renderOver(rows) {
@@ -254,11 +271,25 @@
       $('over').innerHTML = h + '</table>'; $('overWrap').style.display = 'block';
     }
 
+    function renderForget(rows) {
+      if (!rows.length) { $('forgetWrap').style.display = 'none'; return; }
+      let h = '<table><tr><th>氏名</th><th>拠点・会社</th><th>今月</th></tr>';
+      rows.forEach(function (r) {
+        const cls = r.count >= 5 ? 'over' : (r.count >= 3 ? 'warn' : 'err');
+        h += '<tr><td>' + esc(r.name) + '</td>'
+          + '<td>' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</td>'
+          + '<td><span class="badge ' + cls + '">' + esc(r.count) + '回</span></td></tr>';
+      });
+      $('forget').innerHTML = h + '</table>'; $('forgetWrap').style.display = 'block';
+    }
+
     function renderCorr(rows) {
       if (!rows.length) { $('corr').innerHTML = '<div class="empty">勤怠修正の申請はありません</div>'; return; }
       let h = '<table><tr><th>氏名</th><th>対象日</th><th>修正内容</th><th>操作</th></tr>';
       rows.forEach(function (r) {
-        const detail = '出勤 ' + (r.in || '―') + ' / 退勤 ' + (r.out || '―') + (r.reason ? '<div class="dep">理由：' + esc(r.reason) + '</div>' : '');
+        const detail = '出勤 ' + (r.in || '―') + ' / 退勤 ' + (r.out || '―')
+          + '<div class="dep">理由区分：' + esc(r.reasonType || 'その他') + '</div>'
+          + (r.reason ? '<div class="dep">理由：' + esc(r.reason) + '</div>' : '');
         h += '<tr><td>' + esc(r.name) + (r.session ? '（' + esc(r.session) + '回目）' : '') + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td>'
           + '<td>' + esc(r.date) + '</td><td>' + detail + '</td>'
           + '<td class="btns"><button class="ap" onclick="decideCorr(' + r.row + ',\'承認\')">承認</button>'

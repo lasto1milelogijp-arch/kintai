@@ -42,6 +42,13 @@
         <div><label for="out">退勤時刻</label><input type="time" id="out" step="1"></div>
       </div>
       <p class="note">片方だけの修正でもOKです（空欄は変更しません）。</p>
+      <label for="reasonType">理由区分（必須）</label>
+      <select id="reasonType">
+        <option value="">― 選択してください ―</option>
+        <option value="打刻忘れ">打刻忘れ</option>
+        <option value="時刻間違い">時刻間違い</option>
+        <option value="その他">その他</option>
+      </select>
       <label for="reason">理由（必須）</label>
       <textarea id="reason" placeholder="例：退勤の打刻を忘れたため"></textarea>
       <button class="btn" id="save" disabled>この内容で申請</button>
@@ -60,7 +67,7 @@
     function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
     function closeSafe(){ if (window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
     function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
-    function validate(){ $('save').disabled = !($('date').value && ($('in').value || $('out').value) && $('reason').value.trim()); }
+    function validate(){ $('save').disabled = !($('date').value && ($('in').value || $('out').value) && $('reasonType').value && $('reason').value.trim()); }
     function showSession(){
       const n = Math.max(1, Number($('session').value || 1));
       const s = daySessions[n-1] || {session:n,in:'',out:'',work:''};
@@ -102,6 +109,7 @@
         $('session').onchange = showSession;
         $('in').oninput = function(){ this.dataset.touched='1'; validate(); };
         $('out').oninput = function(){ this.dataset.touched='1'; validate(); };
+        $('reasonType').onchange = validate;
         $('reason').oninput = validate;
         $('save').onclick = doSave;
         $('form').classList.remove('hidden');
@@ -110,20 +118,22 @@
     };
 
     async function doSave(){
-      const date = $('date').value.replace(/-/g,'/'), tin=$('in').value, tout=$('out').value, reason=$('reason').value.trim();
+      const date = $('date').value.replace(/-/g,'/'), tin=$('in').value, tout=$('out').value;
+      const reasonType=$('reasonType').value, reason=$('reason').value.trim();
       if (!date || (!tin && !tout)) return;
+      if (!reasonType){ alert('理由区分を選択してください'); $('reasonType').focus(); return; }
       if (!reason){ alert('理由を入力してください'); $('reason').focus(); return; }
       $('save').disabled = true; $('form').classList.add('hidden');
       $('done').innerHTML = '<span class="spin"></span>申請中…'; $('done').classList.remove('hidden');
       const params = new URLSearchParams();
       params.append('contents', JSON.stringify({
         action:'correction', userId:profile.userId, displayName:profile.displayName, idToken:idToken,
-        date:date, session:Number($('session').value||1), in:tin, out:tout, reason:reason
+        date:date, session:Number($('session').value||1), in:tin, out:tout, reasonType:reasonType, reason:reason
       }));
       try { await fetch(GAS_URL, { method:'POST', mode:'no-cors', body:params }); } catch(e){}
       await sleep(1500);
       $('done').innerHTML = '✅ 申請しました<br><span style="font-size:15px;font-weight:normal;color:#666">'
-        + date + '<br>出勤 '+(tin||'―')+' / 退勤 '+(tout||'―')
+        + date + '<br>'+reasonType+'<br>出勤 '+(tin||'―')+' / 退勤 '+(tout||'―')
         + '<br>管理者の承認後に反映されます</span>';
       setTimeout(closeSafe, 2600);
     }

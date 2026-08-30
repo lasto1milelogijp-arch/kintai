@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>QR出退勤</title>
+  <style>
+    body{font-family:sans-serif;margin:0;background:#f5f7f8;color:#222}.wrap{max-width:520px;margin:auto;padding:24px 18px 48px}
+    .card{background:#fff;border-radius:18px;padding:24px 20px;box-shadow:0 3px 16px #00000012;text-align:center}
+    h1{font-size:22px;margin:0 0 8px}.base{color:#078d50;font-size:18px;font-weight:bold;margin:12px 0}.meta{color:#666;font-size:14px;line-height:1.6}
+    .btn{width:100%;border:0;border-radius:14px;padding:18px;margin-top:22px;color:#fff;background:#06c755;font-size:22px;font-weight:bold}.btn.out{background:#2878d0}.btn:disabled{background:#aaa}
+    .msg{font-size:18px;font-weight:bold;line-height:1.7;padding:18px 4px}.sub{font-size:14px;color:#666;font-weight:normal;margin-top:10px;white-space:pre-line}.err{color:#c62828}.spin{display:inline-block;width:20px;height:20px;border:3px solid #ddd;border-top-color:#06c755;border-radius:50%;animation:sp .8s linear infinite;vertical-align:-4px;margin-right:8px}@keyframes sp{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body><div class="wrap"><div class="card"><div id="view" class="msg"><span class="spin"></span>確認中…</div></div></div>
+<script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
+<script>
+const LIFF_ID='2010310932-MO7e9yXF';
+const GAS_URL='https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec';
+let profile=null,idToken='',baseId=''; const view=document.getElementById('view');
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+function params(){const a=new URLSearchParams(location.search),ls=a.get('liff.state');if(ls){const b=new URLSearchParams(ls.charAt(0)==='?'?ls.slice(1):ls);if(!a.get('base'))a.set('base',b.get('base')||'');}return a;}
+function show(main,sub,bad){view.innerHTML='<div'+(bad?' class="err"':'')+'>'+main+'</div>'+(sub?'<div class="sub">'+esc(sub)+'</div>':'');}
+window.onload=async function(){try{baseId=params().get('base')||'';if(!baseId)throw new Error('QRコードに拠点情報がありません');await liff.init({liffId:LIFF_ID});if(!liff.isLoggedIn()){liff.login();return;}profile=await liff.getProfile();idToken=liff.getIDToken()||'';if(!idToken)throw new Error('LINE本人確認情報を取得できません');const s=await callGas('action=qr_state&userId='+encodeURIComponent(profile.userId)+'&base='+encodeURIComponent(baseId));if(!s||s.status!=='ok'){show('⚠️ 打刻できません',(s&&s.message)||'設定を確認してください。',true);return;}const type=s.nextType==='退勤'?'退勤':'出勤';view.innerHTML='<h1>QR出退勤</h1><div class="base">'+esc(s.base.name)+'</div><div class="meta">'+esc(s.name)+' さん<br>次の打刻：'+type+'</div><button id="punch" class="btn '+(type==='退勤'?'out':'')+'">'+type+'する</button><div class="sub">位置情報を確認して記録します</div>';document.getElementById('punch').onclick=punch;}catch(e){show('⚠️ エラー',e.message||e,true);}};
+async function punch(){show('<span class="spin"></span>位置情報を確認中…','');try{const p=await coords();const q='action=qr_punch&userId='+encodeURIComponent(profile.userId)+'&base='+encodeURIComponent(baseId)+'&lat='+encodeURIComponent(p.lat)+'&lng='+encodeURIComponent(p.lng)+'&accuracy='+encodeURIComponent(p.accuracy);const r=await callGas(q,45000);if(!r||r.status!=='ok'){show('⚠️ 打刻できません',(r&&r.message)||'通信に失敗しました。',true);return;}show('✅ '+esc(r.type)+'しました',r.base.name+'\n拠点から約'+r.distance+'m');setTimeout(function(){if(liff.isInClient())liff.closeWindow();},2200);}catch(e){show('⚠️ 打刻できません',e.message||e,true);}}
+function coords(){return new Promise(function(resolve,reject){if(!navigator.geolocation)return reject(new Error('この端末では位置情報を利用できません'));navigator.geolocation.getCurrentPosition(function(p){resolve({lat:p.coords.latitude,lng:p.coords.longitude,accuracy:p.coords.accuracy||0});},function(){reject(new Error('位置情報を許可して、もう一度お試しください。'));},{enableHighAccuracy:true,timeout:15000,maximumAge:0});});}
+function jsonp(qs,ms){return new Promise(function(resolve,reject){const cb='cb_'+Date.now()+'_'+Math.floor(Math.random()*1e5),s=document.createElement('script');let done=false;const t=setTimeout(function(){if(!done){delete window[cb];s.remove();reject(new Error('通信がタイムアウトしました'));}},ms||30000);window[cb]=function(d){done=true;clearTimeout(t);delete window[cb];s.remove();resolve(d);};s.onerror=function(){if(!done){clearTimeout(t);delete window[cb];s.remove();reject(new Error('通信に失敗しました'));}};s.src=GAS_URL+'?'+qs+'&idToken='+encodeURIComponent(idToken)+'&callback='+cb;document.head.appendChild(s);});}
+async function callGas(qs,ms){return await jsonp(qs,ms);}
+</script></body></html>
