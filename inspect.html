@@ -22,6 +22,7 @@
     .spin { display:inline-block; width:18px; height:18px; border:3px solid #ddd; border-top-color:#2f8f8f; border-radius:50%; animation:sp .8s linear infinite; vertical-align:-3px; margin-right:6px; }
     @keyframes sp { to { transform: rotate(360deg); } }
     .hidden { display:none; }
+    .sub { display:block; text-align:center; margin-top:14px; color:#2375c5; font-weight:bold; text-decoration:none; }
   </style>
   <script src="https://static.line-scdn.net/liff/edge/versions/2.21.4/sdk.js"></script>
   <script>
@@ -37,6 +38,12 @@
         profile = await liff.getProfile();
         idToken = liff.getIDToken() || '';
         if (!idToken) throw new Error('LINE本人確認情報を取得できません');
+        const access = await jsonpGet('action=my_depot&userId=' + encodeURIComponent(profile.userId));
+        const allowedRoles = ['検査員', '内勤(アルバイト)+検査員', '内勤(業務委託)+検査員'];
+        if (!access || access.status !== 'ok' || allowedRoles.indexOf(access.role) < 0) {
+          $('msg').textContent = '⛔ この画面は検査員のみ利用できます';
+          return;
+        }
         if (navigator.geolocation) {
           navigator.geolocation.getCurrentPosition(function (p) { lat = p.coords.latitude; lng = p.coords.longitude; }, function () {}, { timeout: 6000 });
         }
@@ -114,6 +121,7 @@
         </div>
         <div style="text-align:center;color:#888;font-size:12px;margin-top:8px">今日の件数</div>
       </div>
+      <a class="sub" href="inspect_count.html">検査件数の集計を見る</a>
       <div id="msg"></div>
     </div>
   </div>
