@@ -78,7 +78,7 @@
       (week || []).forEach(function (r) {
         const tr = document.createElement('tr');
         if (r.today) tr.className = 'today'; else if (!r.work) tr.className = 'empty';
-        tr.innerHTML = '<td>' + mdLabel(r.date) + ' <span class="wk">' + r.wday + '</span></td>'
+        tr.innerHTML = '<td>' + mdLabel(r.date) + ' <span class="wk">' + r.wday + '</span>' + (r.sessions > 1 ? '<br><span class="wk">'+r.sessions+'回勤務</span>' : '') + '</td>'
           + '<td>' + (r.in || '―') + '</td><td>' + (r.out || '―') + '</td>'
           + '<td class="num">' + (r.work || '―') + '</td>';
         tb.appendChild(tr);
@@ -94,7 +94,7 @@
       }
       data.rows.forEach(function (r) {
         const tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + mdLabel(r.date) + '</td><td>' + (r.in || '―') + '</td>'
+        tr.innerHTML = '<td>' + mdLabel(r.date) + (r.sessions > 1 ? '<br><span class="wk">'+r.sessions+'回勤務</span>' : '') + '</td><td>' + (r.in || '―') + '</td>'
           + '<td>' + (r.out || '―') + '</td><td class="num">' + (r.work || '―') + '</td>';
         tb.appendChild(tr);
       });

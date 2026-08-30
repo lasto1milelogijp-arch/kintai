@@ -10,7 +10,7 @@
     h1 { font-size: 20px; margin: 4px 0 6px; }
     .lead { color: #666; font-size: 14px; margin: 0 0 18px; line-height: 1.6; }
     label { display: block; font-weight: bold; font-size: 14px; margin: 16px 0 6px; }
-    input, textarea { width: 100%; box-sizing: border-box; padding: 13px; font-size: 16px; border: 1px solid #ccc; border-radius: 10px; background: #fff; }
+    input, textarea, select { width: 100%; box-sizing: border-box; padding: 13px; font-size: 16px; border: 1px solid #ccc; border-radius: 10px; background: #fff; }
     textarea { min-height: 70px; resize: vertical; }
     .row { display: flex; gap: 10px; }
     .row > div { flex: 1; }
@@ -32,6 +32,10 @@
       <p class="lead">打刻の忘れ・間違いを申請します。管理者が承認すると勤務時間に反映されます。</p>
       <label for="date">対象の日付</label>
       <input type="date" id="date">
+      <div id="sessionWrap" class="hidden">
+        <label for="session">修正する勤務</label>
+        <select id="session"></select>
+      </div>
       <div id="cur" class="cur hidden"></div>
       <div class="row">
         <div><label for="in">出勤時刻</label><input type="time" id="in" step="1"></div>
@@ -51,11 +55,20 @@
     const GAS_URL = "https://script.google.com/macros/s/AKfycbxXaZ_4pZsL9EXWsFwNzHfjrcIe_I_9WK5JBmjoHZcO4ZW4YSorRpv5ad3L6IOLJkzZ/exec";
     let profile = null;
     let idToken = '';
+    let daySessions = [];
     const $ = function (id) { return document.getElementById(id); };
     function sleep(ms){ return new Promise(function(r){ setTimeout(r,ms); }); }
     function closeSafe(){ if (window.liff && liff.isInClient && liff.isInClient()) liff.closeWindow(); }
     function todayStr(){ const d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
     function validate(){ $('save').disabled = !($('date').value && ($('in').value || $('out').value) && $('reason').value.trim()); }
+    function showSession(){
+      const n = Math.max(1, Number($('session').value || 1));
+      const s = daySessions[n-1] || {session:n,in:'',out:'',work:''};
+      $('cur').textContent = '現在の記録（'+n+'回目）… 出勤 '+(s.in||'―')+' / 退勤 '+(s.out||'―')+' / 勤務 '+(s.work||'―');
+      $('cur').classList.remove('hidden');
+      $('in').value=s.in||''; $('out').value=s.out||'';
+      $('in').dataset.touched=''; $('out').dataset.touched=''; validate();
+    }
 
     async function loadDay(){
       const dt = $('date').value; if (!dt) return;
@@ -63,11 +76,12 @@
       try {
         const r = await callGas('action=my_attendance&userId='+encodeURIComponent(profile.userId)+'&date='+encodeURIComponent(ds));
         if (r && r.found) {
-          $('cur').textContent = '現在の記録 … 出勤 '+(r.in||'―')+' / 退勤 '+(r.out||'―')+' / 勤務 '+(r.work||'―');
-          $('cur').classList.remove('hidden');
-          if (r.in && !$('in').dataset.touched) $('in').value = r.in;
-          if (r.out && !$('out').dataset.touched) $('out').value = r.out;
+          daySessions = r.sessions || [{session:1,in:r.in||'',out:r.out||'',work:r.work||''}];
+          $('session').innerHTML = daySessions.map(function(s){ return '<option value="'+s.session+'">'+s.session+'回目（'+(s.in||'―')+'～'+(s.out||'―')+'）</option>'; }).join('')
+            + '<option value="'+(daySessions.length+1)+'">新しい勤務を追加</option>';
+          $('sessionWrap').classList.remove('hidden'); showSession();
         } else {
+          daySessions=[]; $('session').innerHTML='<option value="1">1回目（新規）</option>'; $('sessionWrap').classList.remove('hidden');
           $('cur').textContent = 'この日の記録はまだありません（新規に登録されます）。';
           $('cur').classList.remove('hidden');
         }
@@ -85,6 +99,7 @@
         if (!idToken) throw new Error('LINE本人確認情報を取得できません');
         $('date').value = todayStr();
         $('date').onchange = function(){ $('in').dataset.touched=''; $('out').dataset.touched=''; $('in').value=''; $('out').value=''; loadDay(); };
+        $('session').onchange = showSession;
         $('in').oninput = function(){ this.dataset.touched='1'; validate(); };
         $('out').oninput = function(){ this.dataset.touched='1'; validate(); };
         $('reason').oninput = validate;
@@ -103,7 +118,7 @@
       const params = new URLSearchParams();
       params.append('contents', JSON.stringify({
         action:'correction', userId:profile.userId, displayName:profile.displayName, idToken:idToken,
-        date:date, in:tin, out:tout, reason:reason
+        date:date, session:Number($('session').value||1), in:tin, out:tout, reason:reason
       }));
       try { await fetch(GAS_URL, { method:'POST', mode:'no-cors', body:params }); } catch(e){}
       await sleep(1500);

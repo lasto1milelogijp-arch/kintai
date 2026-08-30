@@ -259,7 +259,7 @@
       let h = '<table><tr><th>氏名</th><th>対象日</th><th>修正内容</th><th>操作</th></tr>';
       rows.forEach(function (r) {
         const detail = '出勤 ' + (r.in || '―') + ' / 退勤 ' + (r.out || '―') + (r.reason ? '<div class="dep">理由：' + esc(r.reason) + '</div>' : '');
-        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td>'
+        h += '<tr><td>' + esc(r.name) + (r.session ? '（' + esc(r.session) + '回目）' : '') + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td>'
           + '<td>' + esc(r.date) + '</td><td>' + detail + '</td>'
           + '<td class="btns"><button class="ap" onclick="decideCorr(' + r.row + ',\'承認\')">承認</button>'
           + '<button class="rj" onclick="decideCorr(' + r.row + ',\'却下\')">却下</button></td></tr>';
@@ -276,7 +276,7 @@
       if (!rows.length) { $('att').innerHTML = '<div class="empty">本日の出勤記録はまだありません</div>'; return; }
       let h = '<table><tr><th>氏名</th><th>出勤</th><th>退勤</th><th>勤務</th></tr>';
       rows.forEach(function (r) {
-        h += '<tr><td>' + esc(r.name) + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td><td>' + esc(r.in) + '</td><td>' + esc(r.out) + '</td><td>' + esc(r.work) + '</td></tr>';
+        h += '<tr><td>' + esc(r.name) + (r.session ? ' <span class="dep">' + esc(r.session) + '回目</span>' : '') + '<div class="dep">' + esc(r.depot) + (r.company ? '・' + esc(r.company) : '') + '</div></td><td>' + esc(r.in) + '</td><td>' + esc(r.out) + '</td><td>' + esc(r.work) + '</td></tr>';
       });
       $('att').innerHTML = h + '</table>';
     }
